@@ -355,6 +355,18 @@ DPAD 遥控器友好
                             android:textColor="@color/text_white"
                             android:textSize="14sp" />
 
+                        <Button
+                            android:id="@+id/btnFeedback"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="10dp"
+                            android:background="@drawable/bg_input"
+                            android:focusable="true"
+                            android:text="问题反馈"
+                            android:textAllCaps="false"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp" />
+
                     </LinearLayout>
 
                     <!-- 登出 -->

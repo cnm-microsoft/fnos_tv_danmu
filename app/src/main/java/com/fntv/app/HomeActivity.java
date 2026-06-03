@@ -36,7 +36,7 @@ public class HomeActivity extends AppCompatActivity {
     private LinearLayout moviesContainer, libraryContainer;
     private TextView tvMoviesLoading, tvLibraryLoading, tvLibraryEmpty;
     private TextView tvSettingUsername, tvSettingServer, tvDecoderValue, tvDanmuUrl;
-    private Button btnLogout, btnCheckUpdate;
+    private Button btnLogout, btnCheckUpdate, btnFeedback;
     private RelativeLayout rlDecoderSetting, rlDanmuSetting;
 
     private int currentTab = 0;
@@ -84,6 +84,7 @@ public class HomeActivity extends AppCompatActivity {
         setupSettings();
         setupLogout();
         setupUpdateCheck();
+        setupFeedback();
 
         switchTab(0);
         tvMoviesLoading.setVisibility(View.VISIBLE);
@@ -108,6 +109,7 @@ public class HomeActivity extends AppCompatActivity {
         tvDecoderValue = findViewById(R.id.tvDecoderValue);
         btnLogout = findViewById(R.id.btnLogout);
         btnCheckUpdate = findViewById(R.id.btnCheckUpdate);
+        btnFeedback = findViewById(R.id.btnFeedback);
         rlDecoderSetting = findViewById(R.id.rlDecoderSetting);
         rlDanmuSetting = findViewById(R.id.rlDanmuSetting);
         tvDanmuUrl = findViewById(R.id.tvDanmuUrl);
@@ -1570,6 +1572,24 @@ public class HomeActivity extends AppCompatActivity {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) sb.append(String.format("%02X ", b));
         return sb.toString().trim();
+    }
+
+    // ==================== 问题反馈 ====================
+
+    private void setupFeedback() {
+        btnFeedback.setOnClickListener(v -> {
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("问题反馈")
+                    .setMessage("如有问题或建议，请加 QQ：\n710324888")
+                    .setPositiveButton("复制QQ", (dialog, which) -> {
+                        android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                                getSystemService(CLIPBOARD_SERVICE);
+                        cm.setText("710324888");
+                        Toast.makeText(this, "QQ已复制", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNegativeButton("关闭", null)
+                    .show();
+        });
     }
 
     // ==================== 登出 ====================
