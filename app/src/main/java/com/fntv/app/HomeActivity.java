@@ -1302,9 +1302,10 @@ public class HomeActivity extends AppCompatActivity {
 
     /** 更新源（按优先级） */
     private static final String[] UPDATE_URLS = {
-        "https://gitee.com/fntv/android/raw/master/update.json",
-        "https://cdn.jsdelivr.net/gh/fntv/android@master/update.json",
-        "https://raw.githubusercontent.com/fntv/android/master/update.json"
+        "https://cdn.jsdelivr.net/gh/rgcaafe/fnos_tv_danmu@master/update.json",
+        "https://fastly.jsdelivr.net/gh/rgcaafe/fnos_tv_danmu@master/update.json",
+        "https://jsd.onmicrosoft.cn/gh/rgcaafe/fnos_tv_danmu@master/update.json",
+        "https://raw.githubusercontent.com/rgcaafe/fnos_tv_danmu/master/update.json"
     };
 
     private void setupUpdateCheck() {
@@ -1408,9 +1409,10 @@ public class HomeActivity extends AppCompatActivity {
                 c.setConnectTimeout(15000);
                 c.setReadTimeout(30000);
                 c.connect();
-                if (c.getResponseCode() != 200) {
+                final int respCode = c.getResponseCode();
+                if (respCode != 200) {
                     runOnUiThread(() -> {
-                        Toast.makeText(this, "下载失败，服务器返回 " + c.getResponseCode(), Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "下载失败，服务器返回 " + respCode, Toast.LENGTH_LONG).show();
                         resetUpdateBtn();
                     });
                     return;
