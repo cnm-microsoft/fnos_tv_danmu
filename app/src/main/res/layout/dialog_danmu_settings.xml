@@ -91,6 +91,7 @@
 
         <include layout="@layout/item_danmu_slider" android:id="@+id/dm_density" />
         <include layout="@layout/item_danmu_slider" android:id="@+id/dm_maxactive" />
+        <include layout="@layout/item_danmu_slider" android:id="@+id/dm_rowspacing" />
         <include layout="@layout/item_danmu_slider" android:id="@+id/dm_offset" />
         <include layout="@layout/item_danmu_slider" android:id="@+id/dm_maxcomments" />
 

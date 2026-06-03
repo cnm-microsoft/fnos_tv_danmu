@@ -26,6 +26,7 @@ public class DanmuView extends View {
     private float fontSize = 22f;
     private boolean showOutline = true;
     private int densityPct = 100;
+    private float rowSpacing = 1.8f;   // 行间距倍数 1.2 ~ 3.0
 
     public DanmuView(Context c) { this(c, null); }
     public DanmuView(Context c, android.util.AttributeSet a) { this(c, a, 0); }
@@ -44,6 +45,7 @@ public class DanmuView extends View {
     public void setFontSize(float v) { fontSize = v; updateStyle(); }
     public void setShowOutline(boolean v) { showOutline = v; updateStyle(); }
     public void setDensityPct(int v) { densityPct = v; }
+    public void setRowSpacing(float v) { rowSpacing = v; }
 
     private void updateStyle() {
         paint.setTextSize(fontSize * screenDensity);
@@ -121,18 +123,14 @@ public class DanmuView extends View {
     private final List<DanmuItem> active = new ArrayList<>();
     private int eIdx = 0;
 
-    // Choreographer 自动跟随屏幕刷新率：60Hz=60fps, 120Hz=120fps, 144Hz=144fps
     private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
         @Override
         public void doFrame(long frameTimeNanos) {
             if (!running) return;
 
-            // 用 nanoTime 算 dt，精度更高
             long now = System.nanoTime();
-            float dt = (now - lastFrame) / 1_000_000_000f;  // 纳秒→秒
+            float dt = (now - lastFrame) / 1_000_000_000f;
             lastFrame = now;
-
-            // 防止首帧或后台回来时 dt 过大导致弹幕飞走
             if (dt > 0.1f) dt = 0.016f;
 
             int w = getWidth(), h = getHeight();
@@ -142,7 +140,7 @@ public class DanmuView extends View {
             }
 
             float areaH = h * areaPct / 100f;
-            float lnH = fontSize * screenDensity * 1.8f;
+            float lnH = fontSize * screenDensity * rowSpacing;  // 用 rowSpacing 替代写死的 1.8
             int maxRow = Math.max(1, (int) (areaH / lnH));
 
             // 发射
@@ -152,6 +150,10 @@ public class DanmuView extends View {
 
                 if (diff > 0.5f) { eIdx++; continue; }
                 if (diff < 0) break;
+
+                // 发射错开：每条弹幕需要等一个随机 0~0.3s
+                if (diff < Math.random() * 0.3f) break;
+
                 if (Math.random() * 100 >= densityPct) { eIdx++; continue; }
                 if (active.size() >= maxActive) break;
 
@@ -160,7 +162,12 @@ public class DanmuView extends View {
                 a.color = src.color;
                 a.type = src.type;
                 a.tw = paint.measureText(src.text);
-                a.speed = (100 + fontSize * 4) * speedMul;
+
+                // 速度按文字长度变化 + 随机波动
+                int len = Math.max(1, src.text.length());
+                float baseSpeed = 120 + len * 18;
+                float randomFactor = 0.8f + (float)(Math.random() * 0.4);
+                a.speed = baseSpeed * randomFactor * speedMul;
 
                 float rowY = findRow(a.tw, w, lnH, maxRow);
                 if (rowY < 0) {
@@ -174,7 +181,7 @@ public class DanmuView extends View {
                 eIdx++;
             }
 
-            // 更新位置（speed 是 px/s，dt 是秒，任何刷新率下移动距离一致）
+            // 更新位置
             List<DanmuItem> dead = new ArrayList<>();
             for (DanmuItem a : active) {
                 a.x -= a.speed * dt;
@@ -188,10 +195,10 @@ public class DanmuView extends View {
     };
 
     /**
-     * 行避让：随机间隔（15dp ~ 45dp）
+     * 行避让：随机间隔（20dp ~ 60dp）
      */
     private float findRow(float newTw, int screenW, float lnH, int maxRow) {
-        float gap = (15f + (float)(Math.random() * 30)) * screenDensity;
+        float gap = (20f + (float)(Math.random() * 40)) * screenDensity;
 
         for (int r = 0; r < maxRow; r++) {
             float rowY = lnH + r * lnH;

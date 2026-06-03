@@ -1,7 +1,7 @@
 {
-    "versionCode": 5,
-    "versionName": "1.0.5",
-    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.0.5/FNTV_release_v1.0.5_20260603_1359.apk",
-    "changelog": "1. 正式包 \n",
+    "versionCode": 6,
+    "versionName": "1.0.6",
+    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.0.6/FNTV_release_v1.0.6_20260603_1510.apk",
+    "changelog": "1. 修复手机播放会息屏的问题。 \n 2. 优化弹幕观感，修复透明度无法生效的问题，新增行间距设置。 \n2. 优化字幕显示，背景改为透明。 \n",
     "forceUpdate": false
   }

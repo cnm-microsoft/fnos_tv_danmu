@@ -19,6 +19,7 @@ import com.google.android.exoplayer2.source.ProgressiveMediaSource;
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
 import com.google.android.exoplayer2.ui.PlayerView;
+import com.google.android.exoplayer2.ui.CaptionStyleCompat;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -97,7 +98,6 @@ public class PlayerActivity extends AppCompatActivity {
         btnDanmu = findViewById(R.id.btnDanmu);
         danmuView = findViewById(R.id.danmuView);
 
-        // 弹幕服务器地址（设置页可配）
         String savedUrl = prefs.getString("danmu_url", "");
         if (savedUrl.isEmpty()) {
             String host = prefs.getString("host", "");
@@ -114,7 +114,6 @@ public class PlayerActivity extends AppCompatActivity {
 
         initPlayer();
 
-        // 读取弹幕开关状态并应用设置
         boolean savedDanmuOn = prefs.getBoolean("danmu_on", true);
         if (savedDanmuOn) {
             danmuOn = true;
@@ -127,12 +126,12 @@ public class PlayerActivity extends AppCompatActivity {
             danmuView.setShowOutline(prefs.getBoolean("danmu_outline", true));
             danmuView.setMaxActive(prefs.getInt("danmu_maxactive", 40));
             danmuView.setDensityPct(prefs.getInt("danmu_density", 100));
+            danmuView.setRowSpacing(prefs.getFloat("danmu_rowspacing", 1.8f));
         } else {
             danmuView.setVisibility(View.GONE);
             btnDanmu.setText("弹");
         }
 
-        // 触摸屏幕：先显示控件，再触摸才暂停
         findViewById(android.R.id.content).setOnClickListener(v -> {
             if (ctrlVis) togglePlay();
             else showCtrl(true);
@@ -186,6 +185,20 @@ public class PlayerActivity extends AppCompatActivity {
         playerView.setPlayer(player);
         playerView.setUseController(false);
         playerView.setShutterBackgroundColor(Color.TRANSPARENT);
+        playerView.setKeepScreenOn(true);
+        // 字幕样式：白色文字，透明背景，黑色描边
+        com.google.android.exoplayer2.ui.CaptionStyleCompat captionStyle =
+                new com.google.android.exoplayer2.ui.CaptionStyleCompat(
+                        Color.WHITE,                    // 前景色
+                        Color.TRANSPARENT,              // 背景色（透明）
+                        Color.TRANSPARENT,              // 窗口色（透明）
+                        com.google.android.exoplayer2.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                        Color.BLACK,                    // 描边色
+                        null                            // 字体
+                );
+        if (playerView.getSubtitleView() != null) {
+            playerView.getSubtitleView().setStyle(captionStyle);
+        }
 
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int s) {
@@ -224,7 +237,6 @@ public class PlayerActivity extends AppCompatActivity {
                     if (info.item != null) itemTitle = info.item.title;
                     if (info.item != null && info.item.seasonNumber > 0) seasonNumber = info.item.seasonNumber;
                     if (info.item != null) getIntent().putExtra("episode_number", info.item.episodeNumber);
-                    // 加载弹幕（用系列名称匹配）
                     int epNum = info.item != null ? info.item.episodeNumber : 0;
                     String matchName = itemTV != null && !itemTV.isEmpty() ? itemTV : itemTitle;
                     if (matchName != null && !matchName.isEmpty() && epNum > 0) {
@@ -385,7 +397,6 @@ public class PlayerActivity extends AppCompatActivity {
         btnDanmu.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
         if (show) {
             updateTitle();
-            // 如果已有按钮聚焦，不抢焦点
             if (!controller.hasFocus() && !btnDanmu.hasFocus() && !btnLock.hasFocus() && !topBar.hasFocus()) {
                 btnPlayPause.post(() -> btnPlayPause.requestFocus());
             }
@@ -398,7 +409,6 @@ public class PlayerActivity extends AppCompatActivity {
         handler.postDelayed(hideC, 5000);
     }
     private final Runnable hideC = () -> {
-        // 如果有按钮处于聚焦状态，延迟隐藏
         if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || topBar.hasFocus()) {
             resetHideTimer();
             return;
@@ -406,7 +416,6 @@ public class PlayerActivity extends AppCompatActivity {
         showCtrl(false);
     };
 
-    /** 给控制按钮添加焦点监听：聚焦时重置隐藏定时器 */
     private void setupFocusAutoHide() {
         View.OnFocusChangeListener l = (v, hasFocus) -> {
             if (hasFocus) resetHideTimer();
@@ -469,6 +478,7 @@ public class PlayerActivity extends AppCompatActivity {
         final int[] maxActive = {p.getInt("danmu_maxactive", 40)};
         final int[] offset = {p.getInt("danmu_offset", 0)};
         final int[] maxComments = {p.getInt("danmu_maxcomments", 50000)};
+        final float[] rowSpacing = {p.getFloat("danmu_rowspacing", 1.8f)};
 
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar);
         dialog.setContentView(R.layout.dialog_danmu_settings);
@@ -480,9 +490,11 @@ public class PlayerActivity extends AppCompatActivity {
         final Button matchBtn = dialog.findViewById(R.id.dm_matchBtn);
         matchBtn.setOnClickListener(v -> { dialog.dismiss(); showDanmuSearch(); });
 
-        setupSlider(dialog, R.id.dm_opacity, "不透明度", (int)(opacity[0]*100), 0, 100, "%");
+        int opVal = Math.min(100, Math.max(0, (int)(opacity[0]*100)));
+        setupSlider(dialog, R.id.dm_opacity, "不透明度", opVal, 0, 100, "%");
         setupSlider(dialog, R.id.dm_area, "显示区域", area[0], 10, 80, "%");
         setupSlider(dialog, R.id.dm_fontsize, "字号", (int)fontSize[0], 12, 40, "");
+        setupSlider(dialog, R.id.dm_rowspacing, "行间距", (int)(rowSpacing[0]*100), 120, 300, "x");
         setupSlider(dialog, R.id.dm_speed, "速度", (int)(speed[0]*100), 30, 300, "x");
         setupSlider(dialog, R.id.dm_density, "密度", density[0], 50, 100, "%");
         setupSlider(dialog, R.id.dm_maxactive, "同屏最大", maxActive[0], 10, 80, "");
@@ -497,8 +509,9 @@ public class PlayerActivity extends AppCompatActivity {
             isOn[0]=sw.isChecked(); outline[0]=olSw.isChecked();
             int a = readSlider(dialog, R.id.dm_area, 10);
             float sp = readSlider(dialog, R.id.dm_speed, 30) / 100f;
-            float op = readSlider(dialog, R.id.dm_opacity, 20) / 100f;
+            float op = readSlider(dialog, R.id.dm_opacity, 0) / 100f;      // 修复：min 是 0 不是 20
             float fs = readSlider(dialog, R.id.dm_fontsize, 12);
+            float rs = readSlider(dialog, R.id.dm_rowspacing, 120) / 100f;  // 行间距 1.20~3.00
             int dn = readSlider(dialog, R.id.dm_density, 50);
             int mx = readSlider(dialog, R.id.dm_maxactive, 10);
             int of = readSlider(dialog, R.id.dm_offset, 0) - 30;
@@ -508,11 +521,14 @@ public class PlayerActivity extends AppCompatActivity {
                     .putFloat("danmu_speed",sp).putFloat("danmu_opacity",op)
                     .putFloat("danmu_fontsize",fs).putBoolean("danmu_outline",outline[0])
                     .putInt("danmu_density",dn).putInt("danmu_maxactive",mx)
-                    .putInt("danmu_offset",of).putInt("danmu_maxcomments",mc).apply();
+                    .putInt("danmu_offset",of).putInt("danmu_maxcomments",mc)
+                    .putFloat("danmu_rowspacing",rs).apply();
             if(isOn[0]) { danmuOn=true; danmuView.setVisibility(View.VISIBLE); btnDanmu.setText("弹✕");
                 danmuView.setAreaPct(a); danmuView.setSpeedMul(sp); danmuView.setOpacity(op);
                 danmuView.setFontSize(fs); danmuView.setShowOutline(outline[0]);
-                danmuView.setMaxActive(mx); danmuView.setDensityPct(dn); danmuView.start();
+                danmuView.setMaxActive(mx); danmuView.setDensityPct(dn);
+                danmuView.setRowSpacing(rs);
+                danmuView.start();
                 if(danmuItems!=null) danmuView.loadDanmu(danmuItems);
             } else { danmuOn=false; danmuView.setVisibility(View.GONE); btnDanmu.setText("弹");
                 danmuView.stop(); danmuView.clear(); }
@@ -555,7 +571,6 @@ public class PlayerActivity extends AppCompatActivity {
         return sb != null ? sb.getProgress() + min : min;
     }
 
-    /** 手动搜索弹幕 */
     private void showDanmuSearch() {
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar);
         dialog.setContentView(R.layout.dialog_danmu_search);
@@ -664,7 +679,6 @@ public class PlayerActivity extends AppCompatActivity {
                     eps = j.getJSONObject("data").getJSONArray("episodes");
                 if(eps==null || eps.length()==0) { showDanmuStatus("弹幕: 无剧集"); return; }
 
-                // 显示剧集列表让用户选择
                 final int epCount = eps.length();
                 final String[] epLabels = new String[epCount];
                 final int[] epIds = new int[epCount];
@@ -714,14 +728,17 @@ public class PlayerActivity extends AppCompatActivity {
                     arr = new org.json.JSONArray(raw);
                 }
                 int maxCom = getSharedPreferences("fntv_prefs",MODE_PRIVATE).getInt("danmu_maxcomments",50000);
-                int limit = Math.min(arr.length(), maxCom);
-                final List<DanmuView.DanmuComment> list = new java.util.ArrayList<>(limit);
-                for(int i=0;i<limit;i++){
+                int total = arr.length();
+                float keepRate = total > maxCom ? (float) maxCom / total : 1f;
+                final List<DanmuView.DanmuComment> list = new java.util.ArrayList<>(Math.min(total, maxCom));
+                for(int i=0;i<total;i++){
+                    // 超过上限时按比例稀疏，保留均匀分布
+                    if (keepRate < 1f && Math.random() >= keepRate) continue;
+
                     org.json.JSONObject o=arr.getJSONObject(i);
                     DanmuView.DanmuComment dc=new DanmuView.DanmuComment();
                     dc.text=o.optString("m","");
 
-                    // 解析 dandanplay 格式: "time,mode,size,color"
                     String pVal = o.optString("p", "0");
                     if (pVal.contains(",")) {
                         String[] parts = pVal.split(",");
@@ -741,10 +758,9 @@ public class PlayerActivity extends AppCompatActivity {
 
                     list.add(dc);
                 }
-                // 按时间排序
+
                 java.util.Collections.sort(list, (a, b) -> Float.compare(a.time, b.time));
 
-                final int total = arr.length();
                 final int loaded = list.size();
                 runOnUiThread(()->{
                     danmuItems = list;
@@ -762,7 +778,6 @@ public class PlayerActivity extends AppCompatActivity {
         }).start();
     }
 
-    /** 弹幕状态提示 */
     private void showDanmuStatus(String msg) {
         runOnUiThread(() -> {
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
@@ -770,7 +785,6 @@ public class PlayerActivity extends AppCompatActivity {
         });
     }
 
-    /** 加载弹幕数据 */
     private void loadDanmu(String title, String guid) {
         if (danmuUrl.isEmpty() || title == null) {
             showDanmuStatus("弹幕: 未配置服务器");
@@ -781,7 +795,6 @@ public class PlayerActivity extends AppCompatActivity {
             try {
                 int episodeId = 0;
                 String matchedName = title;
-                // 1) 尝试 match API
                 try {
                     java.net.URL url = new java.net.URL(danmuUrl + "/api/v2/match");
                     java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
@@ -811,7 +824,6 @@ public class PlayerActivity extends AppCompatActivity {
                         }
                     }
                 } catch (Exception ignored) {}
-                // 2) match 失败 → 搜索番剧取第一个
                 if (episodeId <= 0) {
                     Log.d(TAG, "match failed, searching: " + title);
                     showDanmuStatus("弹幕: 搜索 \"" + title + "\"...");
@@ -909,7 +921,6 @@ public class PlayerActivity extends AppCompatActivity {
     @Override public boolean onKeyDown(int k, KeyEvent e) {
         if (isLocked) {
             if (k == KeyEvent.KEYCODE_BACK) {
-                // 有焦点则移除焦点（隐藏聚焦框），无焦点则解锁
                 if (btnLock.hasFocus() || controller.hasFocus()) {
                     controller.clearFocus();
                     btnLock.clearFocus();
@@ -928,13 +939,10 @@ public class PlayerActivity extends AppCompatActivity {
             }
             return true;
         }
-        // 控制栏显示时走系统焦点导航（按钮间移动），隐藏时用 DPAD 唤出控制栏
         if (ctrlVis) {
             switch (k) {
                 case KeyEvent.KEYCODE_BACK:
-                    // 信息面板打开时优先关闭
                     if (infoVis) { toggleInfo(); return true; }
-                    // 如果有按钮聚焦 → 移除焦点；否则双击退出
                     if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || topBar.hasFocus()) {
                         controller.clearFocus();
                         topBar.clearFocus();
@@ -965,7 +973,6 @@ public class PlayerActivity extends AppCompatActivity {
                     }
                     return super.onKeyDown(k, e);
                 case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
-                    // 如果焦点在某个功能按钮上，让按钮自己的点击事件处理，不触发播放/暂停
                     if (seekBar.hasFocus() || btnRewind.hasFocus() || btnForward.hasFocus()
                             || btnSpeed.hasFocus() || btnRatio.hasFocus() || btnInfo.hasFocus()
                             || btnEpisodeList.hasFocus() || btnNextEp.hasFocus()) {
@@ -973,7 +980,6 @@ public class PlayerActivity extends AppCompatActivity {
                     }
                     togglePlay(); return true;
                 case KeyEvent.KEYCODE_DPAD_UP:
-                    // 已在最上层按钮 → 隐藏控制栏；否则让焦点往上走
                     if (btnDanmu.hasFocus() || btnLock.hasFocus() || topBar.hasFocus()) {
                         showCtrl(false);
                         return true;
@@ -981,7 +987,6 @@ public class PlayerActivity extends AppCompatActivity {
                     return super.onKeyDown(k, e);
                 case KeyEvent.KEYCODE_INFO: case KeyEvent.KEYCODE_MENU:
                     toggleInfo(); return true;
-                // LEFT/RIGHT 不拦截，让系统走焦点导航
             }
             return super.onKeyDown(k, e);
         } else {
@@ -1014,24 +1019,19 @@ public class PlayerActivity extends AppCompatActivity {
                         | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
     }
 
-    /** 判断是否是 TV 设备 */
     private boolean isTvDevice() {
         android.app.UiModeManager uiModeManager = (android.app.UiModeManager) getSystemService(UI_MODE_SERVICE);
         return uiModeManager != null
                 && uiModeManager.getCurrentModeType() == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;
     }
 
-    /** 退出播放时恢复屏幕方向：手机回竖屏，TV 保持横屏 */
     private void restoreOrientation() {
         if (isTvDevice()) {
-            // TV 没有竖屏概念，保持横屏
             setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         } else {
-            // 手机：强制切回竖屏
             setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
         }
     }
-
 
     private String fmt(long ms) {
         if (ms <= 0) return "00:00";
@@ -1043,7 +1043,6 @@ public class PlayerActivity extends AppCompatActivity {
         super.onPause();
         restoreOrientation();
     }
-
     @Override protected void onStop() { super.onStop(); saveProgress(); if (player != null) player.setPlayWhenReady(false); }
     @Override protected void onDestroy() {
         super.onDestroy(); handler.removeCallbacksAndMessages(null);
