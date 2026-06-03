@@ -1309,9 +1309,10 @@ public class HomeActivity extends AppCompatActivity {
 
     /** 更新源（按优先级） */
     private static final String[] UPDATE_URLS = {
+        "https://raw.giteeusercontent.com/coffee710/fntv/raw/master/update.json",
+        "https://jsd.onmicrosoft.cn/gh/rgcaafe/fnos_tv_danmu@master/update.json",
         "https://cdn.jsdelivr.net/gh/rgcaafe/fnos_tv_danmu@master/update.json",
         "https://fastly.jsdelivr.net/gh/rgcaafe/fnos_tv_danmu@master/update.json",
-        "https://jsd.onmicrosoft.cn/gh/rgcaafe/fnos_tv_danmu@master/update.json",
         "https://raw.githubusercontent.com/rgcaafe/fnos_tv_danmu/master/update.json"
     };
 
@@ -1326,8 +1327,13 @@ public class HomeActivity extends AppCompatActivity {
             try {
                 org.json.JSONObject json = null;
                 String usedUrl = "";
+                String ts = new java.text.SimpleDateFormat("yyyyMMddHHmm", java.util.Locale.CHINA).format(new java.util.Date());
                 for (String url : UPDATE_URLS) {
                     try {
+                        // 非 GitHub raw 源追加时间戳参数，避免 CDN 缓存
+                        if (!url.contains("raw.githubusercontent.com")) {
+                            url = url + (url.contains("?") ? "&" : "?") + "t=" + ts;
+                        }
                         Log.d("Update", "尝试源: " + url);
                         java.net.URL u = new java.net.URL(url);
                         java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
