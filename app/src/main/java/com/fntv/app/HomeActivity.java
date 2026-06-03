@@ -112,6 +112,11 @@ public class HomeActivity extends AppCompatActivity {
         rlDanmuSetting = findViewById(R.id.rlDanmuSetting);
         tvDanmuUrl = findViewById(R.id.tvDanmuUrl);
         tvSettingServer.setText(prefs.getString("host", ""));
+
+        TextView tvVersion = findViewById(R.id.tvVersionName);
+        try {
+            tvVersion.setText("FN TV v" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+        } catch (Exception ignored) {}
     }
 
     // ======================== Tab ========================
@@ -1321,22 +1326,40 @@ public class HomeActivity extends AppCompatActivity {
                 String usedUrl = "";
                 for (String url : UPDATE_URLS) {
                     try {
+                        Log.d("Update", "尝试源: " + url);
                         java.net.URL u = new java.net.URL(url);
                         java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
                         c.setConnectTimeout(8000);
                         c.setReadTimeout(8000);
+                        c.setInstanceFollowRedirects(true);
                         c.connect();
-                        if (c.getResponseCode() == 200) {
+                        int code = c.getResponseCode();
+                        Log.d("Update", "响应码: " + code + " 来自: " + url);
+                        if (code == 200) {
                             java.io.BufferedReader r = new java.io.BufferedReader(
                                     new java.io.InputStreamReader(c.getInputStream(), "UTF-8"));
                             StringBuilder sb = new StringBuilder(); String l;
                             while ((l = r.readLine()) != null) sb.append(l);
                             r.close();
-                            json = new org.json.JSONObject(sb.toString());
+                            String body = sb.toString();
+                            Log.d("Update", "响应体: " + body.substring(0, Math.min(300, body.length())));
+                            json = new org.json.JSONObject(body);
                             usedUrl = url;
                             break;
+                        } else {
+                            // 读取错误流
+                            try {
+                                java.io.BufferedReader er = new java.io.BufferedReader(
+                                        new java.io.InputStreamReader(c.getErrorStream(), "UTF-8"));
+                                StringBuilder eb = new StringBuilder(); String el;
+                                while ((el = er.readLine()) != null) eb.append(el);
+                                er.close();
+                                Log.w("Update", "错误响应: " + eb.toString());
+                            } catch (Exception ignored2) {}
                         }
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        Log.e("Update", "源 \"" + url + "\" 失败: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                    }
                 }
 
                 if (json == null) {
