@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <!-- 视频 -->
+    <com.google.android.exoplayer2.ui.PlayerView
+        android:id="@+id/playerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 缓冲 -->
+    <TextView
+        android:id="@+id/tvBuffering"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="加载中..."
+        android:textColor="#80FFFFFF"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
+    <!-- 顶部返回 + 标题 -->
+    <RelativeLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_gravity="top"
+        android:background="#60000000"
+        android:visibility="invisible">
+
+        <Button android:id="@+id/btnBack"
+            android:layout_width="wrap_content" android:layout_height="match_parent"
+            android:background="@drawable/bg_chip"
+            android:text="← 返回"
+            android:textColor="#FFF"
+            android:textSize="13sp"
+            android:focusable="true"
+            android:paddingLeft="14dp" android:paddingRight="14dp"
+            android:layout_centerVertical="true"
+            android:layout_marginLeft="6dp" />
+
+        <TextView android:id="@+id/tvTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_toRightOf="@id/btnBack"
+            android:layout_centerVertical="true"
+            android:layout_marginLeft="12dp"
+            android:maxWidth="300dp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:text=""
+            android:textColor="#FFF"
+            android:textSize="14sp" />
+    </RelativeLayout>
+
+    <!-- 弹幕层（视频上方，控件下方） -->
+    <com.fntv.app.DanmuView
+        android:id="@+id/danmuView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+    <!-- 弹幕开关（左侧中间） -->
+    <Button android:id="@+id/btnDanmu"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="center_vertical|left"
+        android:layout_marginLeft="8dp"
+        android:background="@drawable/bg_chip"
+       
+        android:text="弹"
+        android:textColor="#FFF"
+        android:textSize="12sp"
+        android:focusable="true"
+        android:nextFocusDown="@+id/seekBar"
+        android:visibility="invisible" />
+
+    <!-- 锁定按钮（右侧中间） -->
+    <Button android:id="@+id/btnLock"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="center_vertical|right"
+        android:layout_marginRight="8dp"
+        android:background="@drawable/bg_chip"
+
+        android:text="🔓"
+        android:textSize="16sp"
+        android:focusable="true"
+        android:nextFocusDown="@+id/btnInfo"
+        android:visibility="invisible" />
+
+    <!-- 控制层 (底部深色渐变区) -->
+    <LinearLayout
+        android:id="@+id/controller"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:paddingTop="28dp"
+        android:background="@drawable/bg_controller"
+        android:visibility="invisible">
+
+        <!-- 进度条 (细条) -->
+        <SeekBar
+            android:id="@+id/seekBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="1000"
+            android:progress="0"
+            android:focusable="true"
+            android:nextFocusUp="@+id/btnDanmu"
+            android:nextFocusDown="@+id/btnPlayPause"
+            android:background="@drawable/seekbar_bg_focus"
+            android:progressDrawable="@drawable/seeker_progress"
+            android:thumb="@drawable/seeker_thumb"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp" />
+
+        <!-- 时间 -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="10dp"
+            android:paddingRight="16dp"
+            android:paddingTop="4dp">
+
+            <TextView
+                android:id="@+id/tvTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:00 / 00:00"
+                android:textColor="#CCFFFFFF"
+                android:textSize="12sp" />
+        </RelativeLayout>
+
+        <!-- 控制按钮：左边播放控制，右边信息按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="8dp"
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp">
+
+            <!-- 左区：播放控制 -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button android:id="@+id/btnPlayPause"
+                    android:layout_width="wrap_content" android:layout_height="42dp"
+                    android:background="@drawable/bg_chip"
+
+                    android:text="播放" android:textColor="#FFF"
+                    android:textSize="14sp" android:focusable="true"
+                    android:layout_marginRight="8dp" android:gravity="center"
+                    android:paddingLeft="12dp" android:paddingRight="12dp"
+                    android:nextFocusUp="@+id/seekBar" />
+
+                <Button android:id="@+id/btnRewind"
+                    android:layout_width="wrap_content" android:layout_height="38dp"
+                    android:background="@drawable/bg_chip" android:text="-10秒"
+                    android:textColor="#DDD" android:textSize="13sp"
+                    android:focusable="true"
+                    android:layout_marginRight="6dp" android:gravity="center"
+                    android:paddingLeft="10dp" android:paddingRight="10dp" />
+
+                <Button android:id="@+id/btnForward"
+                    android:layout_width="wrap_content" android:layout_height="38dp"
+                    android:background="@drawable/bg_chip" android:text="+10秒"
+                    android:textColor="#DDD" android:textSize="13sp"
+                    android:focusable="true"
+                    android:layout_marginRight="10dp" android:gravity="center"
+                    android:paddingLeft="10dp" android:paddingRight="10dp" />
+
+                <Button android:id="@+id/btnSpeed"
+                    android:layout_width="wrap_content" android:layout_height="38dp"
+                    android:background="@drawable/bg_chip" android:text="1x"
+                    android:textColor="#EEE" android:textSize="13sp"
+                    android:focusable="true" android:gravity="center"
+                    android:paddingLeft="12dp" android:paddingRight="20dp" />
+
+                <Button android:id="@+id/btnRatio"
+                    android:layout_width="wrap_content" android:layout_height="38dp"
+                    android:background="@drawable/bg_chip" android:text="比例"
+                    android:textColor="#EEE" android:textSize="13sp"
+                    android:focusable="true" android:gravity="center"
+                    android:paddingLeft="10dp" android:paddingRight="16dp"
+                    android:layout_marginLeft="6dp" />
+
+            </LinearLayout>
+
+            <!-- 右区：信息 + 旋转 -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button android:id="@+id/btnEpisodeList"
+                    android:layout_width="wrap_content" android:layout_height="34dp"
+                    android:background="@drawable/bg_chip"
+                   
+                    android:text="选集" android:textColor="#FFF"
+                    android:textSize="12sp" android:focusable="true"
+                    android:layout_marginRight="4dp" android:gravity="center"
+                    android:paddingLeft="12dp" android:paddingRight="12dp"
+                    android:visibility="gone" />
+
+                <Button android:id="@+id/btnNextEp"
+                    android:layout_width="wrap_content" android:layout_height="34dp"
+                    android:background="@drawable/bg_chip"
+                    android:text="下一集" android:textColor="#FFF"
+                    android:textSize="12sp" android:focusable="true"
+                    android:layout_marginRight="6dp" android:gravity="center"
+                    android:paddingLeft="12dp" android:paddingRight="12dp"
+                    android:visibility="gone" />
+
+                <Button android:id="@+id/btnInfo"
+                    android:layout_width="wrap_content" android:layout_height="34dp"
+                    android:background="@drawable/bg_chip" android:text="信息"
+                    android:textColor="#EEE" android:textSize="12sp"
+                    android:focusable="true"
+                    android:layout_marginRight="4dp" android:gravity="center"
+                    android:paddingLeft="10dp" android:paddingRight="10dp"
+                    android:nextFocusUp="@+id/btnLock" />
+
+            </LinearLayout>
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    <!-- 信息面板 -->
+    <LinearLayout
+        android:id="@+id/infoPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:background="#DD000000"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/infoText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#FFF"
+            android:textSize="12sp"
+            android:lineSpacingExtra="3dp" />
+
+        <Button
+            android:id="@+id/btnCloseInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_gravity="center"
+            android:background="@drawable/bg_chip"
+           
+            android:text="关闭"
+            android:textColor="#FFF"
+            android:focusable="true"
+            android:layout_marginTop="8dp" />
+    </LinearLayout>
+
+</FrameLayout>
