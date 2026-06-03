@@ -1,7 +1,7 @@
 {
-    "versionCode": 2,
-    "versionName": "1.0.1",
-    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.0.1/FNTV_release_v1.0.1_20260603_1126.apk",
-    "changelog": "1. 自动更新测试\n",
+    "versionCode": 3,
+    "versionName": "1.0.3",
+    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.0.3/FNTV_release_v1.0.3_20260603_1257.apk",
+    "changelog": "1. 替换锁定图标\n",
     "forceUpdate": false
   }

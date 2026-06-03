@@ -1431,6 +1431,7 @@ public class HomeActivity extends AppCompatActivity {
                 java.net.HttpURLConnection c = (java.net.HttpURLConnection) url.openConnection();
                 c.setConnectTimeout(15000);
                 c.setReadTimeout(30000);
+                c.setInstanceFollowRedirects(true);
                 c.connect();
                 final int respCode = c.getResponseCode();
                 if (respCode != 200) {
@@ -1458,6 +1459,21 @@ public class HomeActivity extends AppCompatActivity {
                 is.close();
 
                 Log.d("Update", "下载完成: " + apkFile.getAbsolutePath() + " (" + total + " bytes)");
+
+                // 检查文件头是否是 APK (ZIP 格式)
+                java.io.RandomAccessFile raf = new java.io.RandomAccessFile(apkFile, "r");
+                byte[] header = new byte[4];
+                raf.read(header);
+                raf.close();
+                String headerStr = new String(header, "UTF-8");
+                Log.d("Update", "APK 文件头: " + headerStr + " (" + bytesToHex(header) + ")");
+                if (!"PK".equals(headerStr.substring(0, 2))) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, "下载文件不是有效的 APK（文件头异常）", Toast.LENGTH_LONG).show();
+                        resetUpdateBtn();
+                    });
+                    return;
+                }
 
                 // 签名校验
                 if (!verifyApkSignature(apkFile)) {
@@ -1548,6 +1564,12 @@ public class HomeActivity extends AppCompatActivity {
     private void resetUpdateBtn() {
         btnCheckUpdate.setEnabled(true);
         btnCheckUpdate.setText("检查更新");
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) sb.append(String.format("%02X ", b));
+        return sb.toString().trim();
     }
 
     // ==================== 登出 ====================

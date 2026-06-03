@@ -29,7 +29,8 @@ public class PlayerActivity extends AppCompatActivity {
     private SimpleExoPlayer player;
     private TextView tvBuffering, tvTime, infoText;
     private SeekBar seekBar;
-    private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnLock, btnDanmu;
+    private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
+    private ImageView btnLock;
     private TextView tvTitle;
     private DanmuView danmuView;
     private View controller, infoPanel, topBar;
@@ -104,7 +105,7 @@ public class PlayerActivity extends AppCompatActivity {
             savedUrl = "http://" + host + ":9321";
         }
         danmuUrl = savedUrl;
-        btnLock = findViewById(R.id.btnLock);
+        btnLock = (ImageView) findViewById(R.id.btnLock);
         tvTitle = findViewById(R.id.tvTitle);
         topBar = findViewById(R.id.topBar);
         controller = findViewById(R.id.controller);
@@ -147,7 +148,7 @@ public class PlayerActivity extends AppCompatActivity {
         btnDanmu.setOnClickListener(v -> showDanmuSettings());
         btnLock.setOnClickListener(v -> {
             isLocked = !isLocked;
-            btnLock.setText(isLocked ? "🔒" : "🔓");
+            btnLock.setImageResource(isLocked ? R.drawable.ic_lock : R.drawable.ic_unlock);
             if (isLocked) {
                 topBar.setVisibility(View.INVISIBLE);
                 controller.setVisibility(View.INVISIBLE);
@@ -915,13 +916,13 @@ public class PlayerActivity extends AppCompatActivity {
                     return true;
                 }
                 isLocked = false;
-                btnLock.setText("🔓");
+                btnLock.setImageResource(R.drawable.ic_unlock);
                 showCtrl(true);
                 return true;
             }
             if (k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER) {
                 isLocked = false;
-                btnLock.setText("🔓");
+                btnLock.setImageResource(R.drawable.ic_unlock);
                 showCtrl(true);
                 return true;
             }
