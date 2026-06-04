@@ -90,6 +90,20 @@ public class DanmuView extends View {
         Choreographer.getInstance().removeFrameCallback(frameCallback);
     }
 
+    /** 跳转时重置弹幕状态（对应 JS 版 onSeek） */
+    public void seekToTime(long ms) {
+        playTime = ms / 1000f;
+        active.clear();
+        // 二分定位到当前时间对应的弹幕索引
+        int lo = 0, hi = items.size();
+        while (lo < hi) {
+            int mid = (lo + hi) >> 1;
+            if (items.get(mid).time <= playTime) lo = mid + 1;
+            else hi = mid;
+        }
+        eIdx = lo;
+    }
+
     public void resume() {
         if (items.isEmpty()) return;
         running = true;

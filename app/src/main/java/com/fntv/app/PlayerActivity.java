@@ -163,7 +163,11 @@ public class PlayerActivity extends AppCompatActivity {
 
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
-                if (fromUser && player != null) player.seekTo(p);
+                if (fromUser && player != null) {
+                    player.seekTo(p);
+                    tvTime.setText(fmt(p) + " / " + fmt(player.getDuration()));
+                    if (danmuView != null) danmuView.seekToTime(p);
+                }
             }
             @Override public void onStartTrackingTouch(SeekBar sb) {}
             @Override public void onStopTrackingTouch(SeekBar sb) {}
@@ -344,6 +348,7 @@ public class PlayerActivity extends AppCompatActivity {
         if (player == null) return;
         long p = Math.max(0, Math.min(player.getDuration(), player.getCurrentPosition() + ms));
         player.seekTo(p);
+        if (danmuView != null) danmuView.seekToTime(p);
     }
 
     private void cycleSpeed() {
@@ -438,6 +443,7 @@ public class PlayerActivity extends AppCompatActivity {
         long cur = player.getCurrentPosition(), dur = player.getDuration();
         tvTime.setText(fmt(cur) + " / " + fmt(dur));
         seekBar.setMax((int) Math.max(dur, 1)); seekBar.setProgress((int) cur);
+        seekBar.setKeyProgressIncrement(5000); // 方向键每次 5 秒
         if (danmuView != null) danmuView.setPlayTime(cur);
         handler.postDelayed(timeR, 500);
     }
@@ -958,20 +964,7 @@ public class PlayerActivity extends AppCompatActivity {
                         Toast.makeText(this, "再按一次退出播放", Toast.LENGTH_SHORT).show();
                     }
                     return true;
-                case KeyEvent.KEYCODE_DPAD_LEFT:
-                    if (seekBar.hasFocus()) {
-                        int repL = e.getRepeatCount();
-                        seekRel(repL < 3 ? -5000 : repL < 8 ? -15000 : -30000);
-                        return true;
-                    }
-                    return super.onKeyDown(k, e);
-                case KeyEvent.KEYCODE_DPAD_RIGHT:
-                    if (seekBar.hasFocus()) {
-                        int repR = e.getRepeatCount();
-                        seekRel(repR < 3 ? 5000 : repR < 8 ? 15000 : 30000);
-                        return true;
-                    }
-                    return super.onKeyDown(k, e);
+                // LEFT/RIGHT 由 SeekBar 自身处理（已设 keyProgressIncrement=5000）
                 case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
                     if (seekBar.hasFocus() || btnRewind.hasFocus() || btnForward.hasFocus()
                             || btnSpeed.hasFocus() || btnRatio.hasFocus() || btnInfo.hasFocus()
