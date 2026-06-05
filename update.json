@@ -1,7 +1,7 @@
 {
-    "versionCode": 7,
-    "versionName": "1.0.7",
-    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.0.7/FNTV_release_v1.0.7_20260604_1139.apk",
-    "changelog": "1. 修复遥控器控制进度条异常的问题。 \n",
+    "versionCode": 8,
+    "versionName": "1.0.8",
+    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.0.8/FNTV_release_v1.0.8_20260605_1825.apk",
+    "changelog": "1. 修复https无法访问的问题。 \n2. 优化弹幕体验。 \n3.支持网盘直链（仅测试过夸克）\n",
     "forceUpdate": false
   }
