@@ -37,7 +37,8 @@ public class HomeActivity extends AppCompatActivity {
     private TextView tvMoviesLoading, tvLibraryLoading, tvLibraryEmpty;
     private TextView tvSettingUsername, tvSettingServer, tvDecoderValue, tvDanmuUrl;
     private Button btnLogout, btnCheckUpdate, btnFeedback;
-    private RelativeLayout rlDecoderSetting, rlDanmuSetting;
+    private RelativeLayout rlDecoderSetting, rlDanmuSetting, rlSeekStep;
+    private TextView tvSeekStepValue;
 
     private int currentTab = 0;
     private final List<MediaDbItem> mediaLibraries = new ArrayList<>();
@@ -112,6 +113,8 @@ public class HomeActivity extends AppCompatActivity {
         btnFeedback = findViewById(R.id.btnFeedback);
         rlDecoderSetting = findViewById(R.id.rlDecoderSetting);
         rlDanmuSetting = findViewById(R.id.rlDanmuSetting);
+        rlSeekStep = findViewById(R.id.rlSeekStep);
+        tvSeekStepValue = findViewById(R.id.tvSeekStepValue);
         tvDanmuUrl = findViewById(R.id.tvDanmuUrl);
         tvSettingServer.setText(prefs.getString("host", ""));
 
@@ -1312,6 +1315,31 @@ public class HomeActivity extends AppCompatActivity {
                 host = host.replaceAll("^https?://", "").replaceAll("/.*$", "").replaceAll(":\\d+$", "");
                 tvDanmuUrl.setText("http://" + host + ":9321");
             });
+            b.show();
+        });
+
+        // 快进退步长
+        final int[] savedStep = {prefs.getInt("seek_step", 10)};
+        tvSeekStepValue.setText(savedStep[0] + "s");
+        rlSeekStep.setOnClickListener(v -> {
+            android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this);
+            b.setTitle("快进退步长（秒）");
+            final android.widget.EditText input = new android.widget.EditText(this);
+            input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+            input.setText(String.valueOf(savedStep[0]));
+            input.setSelection(input.getText().length());
+            b.setView(input);
+            b.setPositiveButton("保存", (dialog, which) -> {
+                try {
+                    int val = Integer.parseInt(input.getText().toString().trim());
+                    if (val < 1) val = 1;
+                    if (val > 300) val = 300;
+                    prefs.edit().putInt("seek_step", val).apply();
+                    tvSeekStepValue.setText(val + "s");
+                    savedStep[0] = val;
+                } catch (Exception ignored) {}
+            });
+            b.setNegativeButton("取消", null);
             b.show();
         });
 

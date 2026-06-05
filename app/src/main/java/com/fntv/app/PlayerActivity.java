@@ -56,7 +56,9 @@ public class PlayerActivity extends AppCompatActivity {
     private long backPressedTime = 0;
     private String pendingDanmuTitle, pendingDanmuGuid;
     private boolean cloudDirectMode = true;
+    private int seekStep = 10000;
     private int qualityIndex = 1;
+    private int streamBitrate = 0; // bps 来自 stream API
     private String[] qualityLabels;
     private int qualityCount = 0;
     private static final String TAG = "Player";
@@ -149,8 +151,11 @@ public class PlayerActivity extends AppCompatActivity {
         });
 
         btnPlayPause.setOnClickListener(v -> togglePlay());
-        btnRewind.setOnClickListener(v -> seekRel(-10000));
-        btnForward.setOnClickListener(v -> seekRel(10000));
+        seekStep = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getInt("seek_step", 10) * 1000;
+        btnRewind.setOnClickListener(v -> seekRel(-seekStep));
+        btnForward.setOnClickListener(v -> seekRel(seekStep));
+        btnRewind.setText("-" + (seekStep / 1000) + "秒");
+        btnForward.setText("+" + (seekStep / 1000) + "秒");
         btnSpeed.setOnClickListener(v -> cycleSpeed());
         btnRatio.setOnClickListener(v -> cycleRatio());
         btnInfo.setOnClickListener(v -> toggleInfo());
@@ -318,6 +323,7 @@ public class PlayerActivity extends AppCompatActivity {
                         if (r.isSuccessful() && r.body() != null && r.body().code == 0
                                 && r.body().data != null) {
                             StreamResponse sd = r.body().data;
+                            if (sd.videoStream != null) streamBitrate = sd.videoStream.bps;
                             qualityCount = sd.directLinkQualities != null ? sd.directLinkQualities.size() : 0;
                             if (qualityCount > 0) {
                                 qualityLabels = new String[qualityCount];
@@ -517,7 +523,7 @@ public class PlayerActivity extends AppCompatActivity {
 
     private void updateCloudBtnText() {
         String mode = cloudDirectMode ? "直链" : "代理";
-        String ql = (qualityCount > 0 && qualityIndex < qualityCount && qualityLabels != null) ? qualityLabels[qualityIndex] : "";
+        String ql = (cloudDirectMode && qualityCount > 0 && qualityIndex < qualityCount && qualityLabels != null) ? qualityLabels[qualityIndex] : "";
         btnCloudMode.setText(ql.isEmpty() ? mode : mode + "/" + ql);
         btnCloudMode.setTextColor(cloudDirectMode ? 0xFF81C784 : 0xFFFFB74D);
     }
@@ -531,24 +537,19 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void showQualityMenu() {
-        final String[] items;
-        if (qualityCount > 0 && qualityLabels != null) {
-            items = new String[qualityCount + 1];
-            for (int i = 0; i < qualityCount; i++) {
-                items[i] = (i == qualityIndex ? "✓ " : "  ") + qualityLabels[i] + (cloudDirectMode ? "" : " (直链)");
-            }
-            items[qualityCount] = cloudDirectMode ? "切换到代理模式" : "切换到直链模式 ✓";
-        } else {
-            items = new String[]{cloudDirectMode ? "切换到代理模式" : "切换到直链模式"};
-        }
         final SharedPreferences sp = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
-        new android.app.AlertDialog.Builder(this)
+        if (cloudDirectMode && qualityCount > 0 && qualityLabels != null) {
+            // 直链模式：显示画质列表 + 切换代理
+            final String[] items = new String[qualityCount + 1];
+            for (int i = 0; i < qualityCount; i++) {
+                items[i] = (i == qualityIndex ? "✓ " : "  ") + qualityLabels[i];
+            }
+            items[qualityCount] = "切换到代理模式";
+            new android.app.AlertDialog.Builder(this)
                 .setTitle("播放设置")
                 .setItems(items, (dialog, which) -> {
-                    if (qualityCount > 0 && which < qualityCount) {
-                        // 选择画质
+                    if (which < qualityCount) {
                         qualityIndex = which;
-                        cloudDirectMode = true;
                         sp.edit().putInt("cloud_quality_index", qualityIndex)
                                 .putBoolean("cloud_direct_mode", true).apply();
                         updateCloudBtnText();
@@ -556,19 +557,34 @@ public class PlayerActivity extends AppCompatActivity {
                         Toast.makeText(this, "切换画质：" + qualityLabels[qualityIndex], Toast.LENGTH_SHORT).show();
                         mediaGuid = null; seeked = false; seekTs = 0;
                         loadPlayInfo();
-                    } else if (which == qualityCount) {
-                        // 切换直链/代理
-                        cloudDirectMode = !cloudDirectMode;
-                        sp.edit().putBoolean("cloud_direct_mode", cloudDirectMode).apply();
+                    } else {
+                        cloudDirectMode = false;
+                        sp.edit().putBoolean("cloud_direct_mode", false).apply();
                         updateCloudBtnText();
                         dialog.dismiss();
-                        Toast.makeText(this, "已切换为" + (cloudDirectMode ? "直链" : "代理") + "模式", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "已切换为代理模式", Toast.LENGTH_SHORT).show();
                         mediaGuid = null; seeked = false; seekTs = 0;
                         loadPlayInfo();
                     }
                 })
                 .setNegativeButton("关闭", null)
                 .show();
+        } else {
+            // 代理模式：只显示切换到直链
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("播放设置")
+                .setItems(new String[]{"切换到直链模式"}, (dialog, which) -> {
+                    cloudDirectMode = true;
+                    sp.edit().putBoolean("cloud_direct_mode", true).apply();
+                    updateCloudBtnText();
+                    dialog.dismiss();
+                    Toast.makeText(this, "已切换为直链模式", Toast.LENGTH_SHORT).show();
+                    mediaGuid = null; seeked = false; seekTs = 0;
+                    loadPlayInfo();
+                })
+                .setNegativeButton("关闭", null)
+                .show();
+        }
     }
 
     private void setupFocusAutoHide() {
@@ -607,7 +623,7 @@ public class PlayerActivity extends AppCompatActivity {
         if (vf != null) {
             s.append("分辨率 ").append(vf.width).append("x").append(vf.height);
             if (vf.codecs != null) s.append("  ").append(vf.codecs);
-            s.append("\n码率 ").append(vf.bitrate > 0 ? vf.bitrate/1000 + "kbps" : "?");
+            s.append("\n码率 ").append(streamBitrate > 0 ? formatBitrate(streamBitrate) : (vf.bitrate > 0 ? vf.bitrate/1000 + "kbps" : "?"));
             s.append("  帧率 ").append(vf.frameRate > 0 ? String.format("%.2f fps", vf.frameRate) : "未知");
             s.append("  ").append(vf.colorInfo != null ? "HDR" : "SDR");
         }
@@ -619,6 +635,13 @@ public class PlayerActivity extends AppCompatActivity {
         }
         s.append("\n解码 ").append(isHwDecode ? "硬解" : "软解");
         infoText.setText(s.toString());
+    }
+
+    private String formatBitrate(int bps) {
+        if (bps <= 0) return "?";
+        if (bps >= 1000000) return String.format("%.2f Mbps", bps / 1000000f);
+        if (bps >= 1000) return String.format("%.0f Kbps", bps / 1000f);
+        return bps + " bps";
     }
 
     // ========== 弹幕 ==========

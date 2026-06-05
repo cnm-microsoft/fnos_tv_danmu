@@ -30,17 +30,25 @@ public class WatchHistoryManager {
     public List<WatchRecord> getAll() {
         String json = prefs.getString(KEY, "[]");
         Type type = new TypeToken<List<WatchRecord>>() {}.getType();
-        List<WatchRecord> list = gson.fromJson(json, type);
-        if (list == null) return new ArrayList<>();
+        try {
+            List<WatchRecord> list = gson.fromJson(json, type);
+            if (list == null) return new ArrayList<>();
 
-        // 按 updatedAt 倒序
-        Collections.sort(list, new Comparator<WatchRecord>() {
-            @Override
-            public int compare(WatchRecord a, WatchRecord b) {
-                return Long.compare(b.updatedAt, a.updatedAt);
-            }
-        });
-        return list;
+            // 按 updatedAt 倒序
+            Collections.sort(list, new Comparator<WatchRecord>() {
+                @Override
+                public int compare(WatchRecord a, WatchRecord b) {
+                    return Long.compare(b.updatedAt, a.updatedAt);
+                }
+            });
+            return list;
+        } catch (Exception e) {
+            android.util.Log.e("WatchHistory", "JSON解析失败，历史记录可能损坏: " + e.getMessage());
+            // 备份损坏数据后清空
+            prefs.edit().putString(KEY + "_backup", json).commit();
+            prefs.edit().remove(KEY).commit();
+            return new ArrayList<>();
+        }
     }
 
     /** 获取前 N 条记录 */
@@ -103,6 +111,6 @@ public class WatchHistoryManager {
 
     private void save(List<WatchRecord> list) {
         String json = gson.toJson(list);
-        prefs.edit().putString(KEY, json).apply();
+        prefs.edit().putString(KEY, json).apply(); // 异步写入，不阻塞主线程
     }
 }

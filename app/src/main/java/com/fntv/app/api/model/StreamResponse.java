@@ -59,6 +59,7 @@ public class StreamResponse {
     public static class VideoStreamInfo {
         public int width;
         public int height;
+        public int bps;
         public String codec;
         @SerializedName("codec_name")
         public String codecName;
