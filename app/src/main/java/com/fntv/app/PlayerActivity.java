@@ -235,7 +235,19 @@ public class PlayerActivity extends AppCompatActivity {
                     if (danmuOn && danmuView != null) danmuView.pause();
                 }
             }
-            @Override public void onPlayerError(PlaybackException e) { Log.e(TAG, e.getMessage()); }
+            int retryCount = 0;
+            @Override public void onPlayerError(PlaybackException e) {
+                Log.e(TAG, "播放错误: " + e.getMessage() + "  retry=" + retryCount);
+                if (retryCount < 5 && player != null) {
+                    retryCount++;
+                    handler.postDelayed(() -> {
+                        if (player != null) {
+                            player.prepare();
+                            player.setPlayWhenReady(true);
+                        }
+                    }, 2000 * retryCount); // 2s, 4s, 6s, 8s, 10s 递增
+                }
+            }
         });
     }
 
@@ -301,30 +313,27 @@ public class PlayerActivity extends AppCompatActivity {
             .enqueue(new retrofit2.Callback<ApiResponse<StreamResponse>>() {
                 @Override public void onResponse(retrofit2.Call<ApiResponse<StreamResponse>> call,
                         retrofit2.Response<ApiResponse<StreamResponse>> r) {
-                    Log.d(TAG, "getStream resp code=" + r.code());
-                    String respBody = new com.google.gson.Gson().toJson(r.body());
-                    Log.d(TAG, "getStream 完整响应: " + respBody.substring(0, Math.min(1000, respBody.length())));
-                    if (r.isSuccessful() && r.body() != null && r.body().code == 0
-                            && r.body().data != null) {
-                        StreamResponse sd = r.body().data;
-                        Log.d(TAG, "getStream data class=" + sd.getClass().getName()
-                                + " dq=" + (sd.directLinkQualities != null ? sd.directLinkQualities.size() : "null"));
-                        if (sd.directLinkQualities != null && !sd.directLinkQualities.isEmpty()) {
-                            qualityCount = sd.directLinkQualities.size();
-                            qualityLabels = new String[qualityCount];
-                            for (int qi = 0; qi < qualityCount; qi++) {
-                                StreamResponse.DirectLinkQuality q = sd.directLinkQualities.get(qi);
-                                qualityLabels[qi] = q.resolution != null && !q.resolution.isEmpty() ? q.resolution : ("画质" + qi);
+                    try {
+                        Log.d(TAG, "getStream resp code=" + r.code());
+                        if (r.isSuccessful() && r.body() != null && r.body().code == 0
+                                && r.body().data != null) {
+                            StreamResponse sd = r.body().data;
+                            qualityCount = sd.directLinkQualities != null ? sd.directLinkQualities.size() : 0;
+                            if (qualityCount > 0) {
+                                qualityLabels = new String[qualityCount];
+                                for (int qi = 0; qi < qualityCount; qi++) {
+                                    StreamResponse.DirectLinkQuality q = sd.directLinkQualities.get(qi);
+                                    qualityLabels[qi] = q.resolution != null && !q.resolution.isEmpty() ? q.resolution : ("画质" + qi);
+                                }
+                                if (qualityIndex >= qualityCount) qualityIndex = 0;
+                                runOnUiThread(() -> {
+                                    btnCloudMode.setVisibility(View.VISIBLE);
+                                    updateCloudBtnText();
+                                });
                             }
-                            if (qualityIndex >= qualityCount) qualityIndex = 0;
-                            runOnUiThread(() -> {
-                                btnCloudMode.setVisibility(View.VISIBLE);
-                                updateCloudBtnText();
-                            });
                         }
-                    } else {
-                        try { Log.e(TAG, "getStream error: " + (r.body() != null ? r.body().msg : r.message()));
-                        } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        Log.e(TAG, "getStream parse error", e);
                     }
                     startPlayback();
                 }
@@ -345,10 +354,11 @@ public class PlayerActivity extends AppCompatActivity {
         } else {
             Log.d(TAG, "播放模式: 代理 " + url);
         }
-        com.google.android.exoplayer2.upstream.DataSource.Factory f = () -> new OkHttpExoDataSource(apiManager.getClient());
+        com.google.android.exoplayer2.upstream.DataSource.Factory f = () -> new OkHttpExoDataSource(apiManager.getStreamClient());
         DefaultExtractorsFactory ef = new DefaultExtractorsFactory(); ef.setConstantBitrateSeekingEnabled(true);
         player.setMediaSource(new ProgressiveMediaSource.Factory(f, ef).createMediaSource(MediaItem.fromUri(url)));
         player.prepare(); player.setPlayWhenReady(true);
+        Log.d(TAG, "startPlayback: parentGuid=" + parentGuid + " episodeList=" + (episodeList != null ? episodeList.size() : "null") + " loadingEp=" + loadingEpisodes);
         if (parentGuid != null && !parentGuid.isEmpty() && episodeList == null && !loadingEpisodes) loadEpisodeList();
     }
 

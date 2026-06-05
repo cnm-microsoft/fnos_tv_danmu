@@ -200,22 +200,21 @@ public class HomeActivity extends AppCompatActivity {
             if (!r.isNearlyFinished()) watching.add(r);
         }
 
-        // 各媒体库：标题 + 预览容器（先建好，拿到第一个 viewAll 的 ID）
+        // 继续观看（最顶部）
+        if (!watching.isEmpty()) {
+            addContinueWatching(moviesContainer, watching, 0);
+        }
+
+        // 各媒体库：标题 + 预览容器
         int firstViewAllId = -1;
         for (MediaDbItem lib : mediaLibraries) {
             LinearLayout headerRow = makeLibHeader(lib.guid, lib.title, 0);
             moviesContainer.addView(headerRow);
-            // 找到 headerRow 里的 viewAll 按钮
             for (int ci = 0; ci < headerRow.getChildCount(); ci++) {
                 View child = headerRow.getChildAt(ci);
                 if (child instanceof Button && child.isFocusable() && firstViewAllId < 0) {
                     firstViewAllId = child.getId();
                 }
-            }
-            // 继续观看（放在第一个媒体库标题后，利用 firstViewAllId）
-            if (!watching.isEmpty()) {
-                addContinueWatching(moviesContainer, watching, firstViewAllId);
-                watching.clear(); // 只加一次
             }
             // 预览卡片容器（暂空，loadAllPreviews 后填充）
             LinearLayout previewBox = new LinearLayout(this);
@@ -226,6 +225,16 @@ public class HomeActivity extends AppCompatActivity {
             previewBox.setTag("preview_" + lib.guid);
             moviesContainer.addView(previewBox);
             moviesContainer.addView(makeSpacer(16));
+        }
+
+        // 有了 firstViewAllId 后，给继续观看卡片设置 nextFocusDown
+        if (firstViewAllId > 0) {
+            for (int wi = 0; wi < moviesContainer.getChildCount(); wi++) {
+                View wv = moviesContainer.getChildAt(wi);
+                if (wv instanceof ViewGroup) {
+                    applyFocusDown((ViewGroup) wv, firstViewAllId);
+                }
+            }
         }
 
         if (moviesContainer.getChildCount() == 0) {
@@ -445,6 +454,19 @@ public class HomeActivity extends AppCompatActivity {
         });
 
         return card;
+    }
+
+    /** 遍历容器，给所有可聚焦卡片设置 nextFocusDown */
+    private void applyFocusDown(ViewGroup group, int targetId) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View v = group.getChildAt(i);
+            if (v.isFocusable()) {
+                v.setNextFocusDownId(targetId);
+            }
+            if (v instanceof ViewGroup) {
+                applyFocusDown((ViewGroup) v, targetId);
+            }
+        }
     }
 
     // ==================== 横向滚动卡片 ====================
@@ -891,6 +913,7 @@ public class HomeActivity extends AppCompatActivity {
         final int progressPct = historyRecord != null ? Math.max(0, Math.min(100, historyRecord.getProgressPercent())) : 0;
         final String pParentGuid = info.parentGuid != null && !info.parentGuid.isEmpty() ? info.parentGuid : item.parentGuid;
 
+        Log.d("Detail", "pParentGuid=" + pParentGuid + " info.parentGuid=" + (info.parentGuid != null ? info.parentGuid : "null") + " item.parentGuid=" + (item.parentGuid != null ? item.parentGuid : "null"));
         Log.d("Detail", "继续播放: historyRecord=" + (historyRecord != null ? "存在(dur=" + historyRecord.duration + ")" : "null")
                 + " info.item.duration=" + (info.item != null ? info.item.duration : "null")
                 + " info.item.runtime=" + (info.item != null ? info.item.runtime : "null")
