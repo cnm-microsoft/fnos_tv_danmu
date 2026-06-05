@@ -69,7 +69,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
         android:layout_marginTop="56dp"
-        android:background="#CC000000"
+        android:background="@drawable/bg_danmu_status"
         android:paddingLeft="14dp"
         android:paddingRight="14dp"
         android:paddingTop="8dp"

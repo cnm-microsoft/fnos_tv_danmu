@@ -819,6 +819,15 @@ public class PlayerActivity extends AppCompatActivity {
             try {
                 int episodeId = 0;
                 String matchedName = title;
+                // 从 title 中提取目标集数（格式 "X S01E05" → 5）
+                int targetEp = 0;
+                java.util.regex.Matcher epM = java.util.regex.Pattern.compile("[Ee](\\d+)").matcher(title);
+                if (epM.find()) targetEp = Integer.parseInt(epM.group(1));
+                Log.d(TAG, "目标集数: " + targetEp + " 来自: " + title);
+
+                // match 返回的番剧信息（若集数不匹配时用作搜索回退）
+                int matchAnimeId = 0;
+                String matchAnimeTitle = "";
                 try {
                     java.net.URL url = new java.net.URL(danmuUrl + "/api/v2/match");
                     java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
@@ -840,56 +849,166 @@ public class PlayerActivity extends AppCompatActivity {
                         if (matches != null && matches.length() > 0) {
                             org.json.JSONObject firstMatch = matches.getJSONObject(0);
                             episodeId = firstMatch.optInt("episodeId", 0);
-                            String matchAnime = firstMatch.optString("animeTitle", "");
+                            matchAnimeId = firstMatch.optInt("animeId", 0);
+                            matchAnimeTitle = firstMatch.optString("animeTitle", "");
                             String matchEp = firstMatch.optString("episodeTitle", "");
-                            if (!matchAnime.isEmpty())
-                                matchedName = matchAnime + (matchEp.isEmpty() ? "" : " " + matchEp);
-                            Log.d(TAG, "match ok: epId=" + episodeId + " name=" + matchedName);
+                            if (!matchAnimeTitle.isEmpty())
+                                matchedName = matchAnimeTitle + (matchEp.isEmpty() ? "" : " " + matchEp);
+                            // 验证集数是否匹配
+                            int matchedEpNum = 0;
+                            java.util.regex.Matcher mEp = java.util.regex.Pattern.compile("[第](\\d+)[集]").matcher(matchEp);
+                            if (mEp.find()) matchedEpNum = Integer.parseInt(mEp.group(1));
+                            Log.d(TAG, "match ok: epId=" + episodeId + " matchedEp=" + matchedEpNum
+                                    + " targetEp=" + targetEp + " name=" + matchedName);
+                            if (targetEp > 0 && matchedEpNum > 0 && matchedEpNum != targetEp) {
+                                showDanmuStatus("弹幕: match 匹配到第" + matchedEpNum + "集，需要第" + targetEp + "集，丢弃");
+                                episodeId = -1;
+                            }
                         }
                     }
                 } catch (Exception ignored) {}
-                if (episodeId <= 0) {
-                    Log.d(TAG, "match failed, searching: " + title);
-                    showDanmuStatus("弹幕: 搜索 \"" + title + "\"...");
+                // match 失败时重试一次
+                if (episodeId <= 0 && matchAnimeId == 0) {
+                    Log.d(TAG, "match retry...");
                     try {
-                        String enc = java.net.URLEncoder.encode(title, "UTF-8");
-                        java.net.URL su = new java.net.URL(danmuUrl + "/api/v2/search/anime?keyword=" + enc);
-                        java.net.HttpURLConnection sc = (java.net.HttpURLConnection) su.openConnection();
-                        sc.connect();
-                        java.io.BufferedReader sr = new java.io.BufferedReader(
-                                new java.io.InputStreamReader(sc.getInputStream(), "UTF-8"));
-                        StringBuilder srp = new StringBuilder(); String l2;
-                        while ((l2 = sr.readLine()) != null) srp.append(l2);
-                        sr.close();
-                        String raw = srp.toString().trim();
-                        Log.d(TAG, "search resp: " + raw.substring(0, Math.min(200, raw.length())));
-                        org.json.JSONArray animes;
-                        if (raw.startsWith("[")) animes = new org.json.JSONArray(raw);
-                        else { org.json.JSONObject jo = new org.json.JSONObject(raw);
-                            animes = jo.has("animes") ? jo.getJSONArray("animes")
-                                    : jo.has("data") ? jo.getJSONArray("data")
-                                    : new org.json.JSONArray(); }
-                        if (animes.length() > 0) {
-                            org.json.JSONObject first = animes.getJSONObject(0);
-                            int aid = first.optInt("animeId", first.optInt("id", 0));
-                            if (aid > 0) {
-                                java.net.URL bu = new java.net.URL(danmuUrl + "/api/v2/bangumi/" + aid);
-                                java.net.HttpURLConnection bc = (java.net.HttpURLConnection) bu.openConnection();
-                                bc.connect();
-                                java.io.BufferedReader br2 = new java.io.BufferedReader(
-                                        new java.io.InputStreamReader(bc.getInputStream(), "UTF-8"));
-                                StringBuilder bp = new StringBuilder(); String l3;
-                                while ((l3 = br2.readLine()) != null) bp.append(l3);
-                                br2.close();
-                                org.json.JSONObject bj = new org.json.JSONObject(bp.toString());
-                                org.json.JSONArray eps = null;
-                                if (bj.has("bangumi") && bj.getJSONObject("bangumi").has("episodes"))
-                                    eps = bj.getJSONObject("bangumi").getJSONArray("episodes");
-                                else if (bj.has("episodes")) eps = bj.getJSONArray("episodes");
-                                else if (bj.has("data") && bj.getJSONObject("data").has("episodes"))
-                                    eps = bj.getJSONObject("data").getJSONArray("episodes");
-                                if (eps != null && eps.length() > 0)
+                        java.net.URL url = new java.net.URL(danmuUrl + "/api/v2/match");
+                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                        conn.setRequestMethod("POST");
+                        conn.setRequestProperty("Content-Type", "application/json");
+                        conn.setDoOutput(true);
+                        String body = "{\"fileName\":\"" + title + "\"}";
+                        conn.getOutputStream().write(body.getBytes("UTF-8"));
+                        conn.connect();
+                        if (conn.getResponseCode() == 200) {
+                            java.io.BufferedReader br = new java.io.BufferedReader(
+                                    new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"));
+                            StringBuilder resp = new StringBuilder(); String l;
+                            while ((l = br.readLine()) != null) resp.append(l);
+                            br.close();
+                            org.json.JSONObject j = new org.json.JSONObject(resp.toString());
+                            org.json.JSONArray matches = j.optJSONArray("matches");
+                            if (matches != null && matches.length() > 0) {
+                                org.json.JSONObject firstMatch = matches.getJSONObject(0);
+                                episodeId = firstMatch.optInt("episodeId", 0);
+                                matchAnimeId = firstMatch.optInt("animeId", 0);
+                                matchAnimeTitle = firstMatch.optString("animeTitle", "");
+                                if (episodeId > 0) {
+                                    String matchEp = firstMatch.optString("episodeTitle", "");
+                                    int matchedEpNum = 0;
+                                    java.util.regex.Matcher mEp = java.util.regex.Pattern.compile("[第](\\d+)[集]").matcher(matchEp);
+                                    if (mEp.find()) matchedEpNum = Integer.parseInt(mEp.group(1));
+                                    if (targetEp > 0 && matchedEpNum > 0 && matchedEpNum != targetEp) {
+                                        showDanmuStatus("弹幕: 重试 match 匹配到第" + matchedEpNum + "集，需要第" + targetEp + "集，丢弃");
+                                        episodeId = -1;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+                if (episodeId <= 0) {
+                    // 优先用 match 返回的番剧名/ID 搜索，避免带上 S01E162 后缀
+                    String searchKw = matchAnimeTitle.isEmpty() ? title : matchAnimeTitle;
+                    Log.d(TAG, "match failed, searching: " + searchKw + " (animeId=" + matchAnimeId + ")");
+                    showDanmuStatus("弹幕: 搜索 \"" + searchKw + "\"...");
+                    try {
+                        // 如果有 animeId 直接取剧集列表，跳过搜索
+                        if (matchAnimeId > 0) {
+                            java.net.URL bu = new java.net.URL(danmuUrl + "/api/v2/bangumi/" + matchAnimeId);
+                            java.net.HttpURLConnection bc = (java.net.HttpURLConnection) bu.openConnection();
+                            bc.connect();
+                            java.io.BufferedReader br2 = new java.io.BufferedReader(
+                                    new java.io.InputStreamReader(bc.getInputStream(), "UTF-8"));
+                            StringBuilder bp = new StringBuilder(); String l3;
+                            while ((l3 = br2.readLine()) != null) bp.append(l3);
+                            br2.close();
+                            org.json.JSONObject bj = new org.json.JSONObject(bp.toString());
+                            org.json.JSONArray eps = null;
+                            if (bj.has("bangumi") && bj.getJSONObject("bangumi").has("episodes"))
+                                eps = bj.getJSONObject("bangumi").getJSONArray("episodes");
+                            else if (bj.has("episodes")) eps = bj.getJSONArray("episodes");
+                            else if (bj.has("data") && bj.getJSONObject("data").has("episodes"))
+                                eps = bj.getJSONObject("data").getJSONArray("episodes");
+                            if (eps != null && eps.length() > 0) {
+                                if (targetEp > 0) {
+                                    showDanmuStatus("弹幕: 从剧集列表中找第" + targetEp + "集...");
+                                    for (int ei = 0; ei < eps.length(); ei++) {
+                                        org.json.JSONObject epo = eps.getJSONObject(ei);
+                                        if (epo.optInt("episodeNumber", 0) == targetEp) {
+                                            episodeId = epo.optInt("episodeId", 0);
+                                            matchedName = matchAnimeTitle + " 第" + targetEp + "集";
+                                            Log.d(TAG, "direct bangumi match: targetEp=" + targetEp + " episodeId=" + episodeId);
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (episodeId <= 0)
                                     episodeId = eps.getJSONObject(0).optInt("episodeId", 0);
+                            }
+                        }
+                        if (episodeId <= 0) {
+                            String enc = java.net.URLEncoder.encode(searchKw, "UTF-8");
+                            java.net.URL su = new java.net.URL(danmuUrl + "/api/v2/search/anime?keyword=" + enc);
+                            java.net.HttpURLConnection sc = (java.net.HttpURLConnection) su.openConnection();
+                            sc.connect();
+                            java.io.BufferedReader sr = new java.io.BufferedReader(
+                                    new java.io.InputStreamReader(sc.getInputStream(), "UTF-8"));
+                            StringBuilder srp = new StringBuilder(); String l2;
+                            while ((l2 = sr.readLine()) != null) srp.append(l2);
+                            sr.close();
+                            String raw = srp.toString().trim();
+                            Log.d(TAG, "search resp: " + raw.substring(0, Math.min(200, raw.length())));
+                            org.json.JSONArray animes;
+                            if (raw.startsWith("[")) animes = new org.json.JSONArray(raw);
+                            else { org.json.JSONObject jo = new org.json.JSONObject(raw);
+                                animes = jo.has("animes") ? jo.getJSONArray("animes")
+                                        : jo.has("data") ? jo.getJSONArray("data")
+                                        : new org.json.JSONArray(); }
+                            if (animes.length() > 0) {
+                                // 找 episodeCount >= targetEp 的番剧
+                                int aid = 0;
+                                for (int ai = 0; ai < animes.length(); ai++) {
+                                    org.json.JSONObject aobj = animes.getJSONObject(ai);
+                                    int ac = aobj.optInt("episodeCount", 0);
+                                    if (targetEp <= 0 || ac >= targetEp) {
+                                        aid = aobj.optInt("animeId", aobj.optInt("id", 0));
+                                        Log.d(TAG, "found anime: " + aobj.optString("animeTitle", "") + " epCount=" + ac);
+                                        break;
+                                    }
+                                }
+                                Log.d(TAG, "search result: selected animeId=" + aid + " (targetEp=" + targetEp + ")");
+                                if (aid > 0) {
+                                    java.net.URL bu = new java.net.URL(danmuUrl + "/api/v2/bangumi/" + aid);
+                                    java.net.HttpURLConnection bc = (java.net.HttpURLConnection) bu.openConnection();
+                                    bc.connect();
+                                    java.io.BufferedReader br2 = new java.io.BufferedReader(
+                                            new java.io.InputStreamReader(bc.getInputStream(), "UTF-8"));
+                                    StringBuilder bp = new StringBuilder(); String l3;
+                                    while ((l3 = br2.readLine()) != null) bp.append(l3);
+                                    br2.close();
+                                    org.json.JSONObject bj = new org.json.JSONObject(bp.toString());
+                                    org.json.JSONArray eps = null;
+                                    if (bj.has("bangumi") && bj.getJSONObject("bangumi").has("episodes"))
+                                        eps = bj.getJSONObject("bangumi").getJSONArray("episodes");
+                                    else if (bj.has("episodes")) eps = bj.getJSONArray("episodes");
+                                    else if (bj.has("data") && bj.getJSONObject("data").has("episodes"))
+                                        eps = bj.getJSONObject("data").getJSONArray("episodes");
+                                    if (eps != null && eps.length() > 0) {
+                                        if (targetEp > 0) {
+                                            showDanmuStatus("弹幕: 从剧集列表中找第" + targetEp + "集...");
+                                            for (int ei = 0; ei < eps.length(); ei++) {
+                                                org.json.JSONObject epo = eps.getJSONObject(ei);
+                                                if (epo.optInt("episodeNumber", 0) == targetEp) {
+                                                    episodeId = epo.optInt("episodeId", 0);
+                                                    Log.d(TAG, "search matched ep by number: targetEp=" + targetEp + " episodeId=" + episodeId);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if (episodeId <= 0)
+                                            episodeId = eps.getJSONObject(0).optInt("episodeId", 0);
+                                    }
+                                }
                             }
                         }
                     } catch (Exception e2) {
@@ -897,7 +1016,7 @@ public class PlayerActivity extends AppCompatActivity {
                     }
                 }
                 if (episodeId <= 0) {
-                    showDanmuStatus("弹幕: 未匹配到番剧");
+                    showDanmuStatus("弹幕: 匹配失败，请手动匹配");
                     return;
                 }
                 loadDanmuByEp(episodeId, matchedName);
