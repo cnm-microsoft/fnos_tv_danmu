@@ -32,7 +32,7 @@ public class PlayerActivity extends AppCompatActivity {
     private SeekBar seekBar;
     private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
     private ImageView btnLock;
-    private TextView tvTitle;
+    private TextView tvTitle, tvDanmuStatus;
     private DanmuView danmuView;
     private View controller, infoPanel, topBar;
     private boolean isLocked = false, danmuOn = false;
@@ -107,6 +107,7 @@ public class PlayerActivity extends AppCompatActivity {
         danmuUrl = savedUrl;
         btnLock = (ImageView) findViewById(R.id.btnLock);
         tvTitle = findViewById(R.id.tvTitle);
+        tvDanmuStatus = findViewById(R.id.tvDanmuStatus);
         topBar = findViewById(R.id.topBar);
         controller = findViewById(R.id.controller);
         infoPanel = findViewById(R.id.infoPanel);
@@ -786,10 +787,18 @@ public class PlayerActivity extends AppCompatActivity {
 
     private void showDanmuStatus(String msg) {
         runOnUiThread(() -> {
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+            if (tvDanmuStatus != null) {
+                tvDanmuStatus.setText(msg);
+                tvDanmuStatus.setVisibility(View.VISIBLE);
+                handler.removeCallbacks(hideDanmuStatus);
+                handler.postDelayed(hideDanmuStatus, 6000);
+            }
             Log.d(TAG, "[弹幕] " + msg);
         });
     }
+    private final Runnable hideDanmuStatus = () -> {
+        if (tvDanmuStatus != null) tvDanmuStatus.setVisibility(View.GONE);
+    };
 
     private void loadDanmu(String title, String guid) {
         if (danmuUrl.isEmpty() || title == null) {
