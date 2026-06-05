@@ -13,11 +13,15 @@ import okhttp3.Response;
 public class OkHttpExoDataSource extends BaseDataSource {
 
     private static final String TAG = "OkHttpDS";
+    private static int chunkSize = 0; // 0 = 不分块
     private final OkHttpClient client;
     private Response response;
     private BufferedInputStream bufferedInput;
     private long bytesRead;
     private boolean transferStarted;
+
+    /** 设置分块模式（字节数），用于夸克等云盘直链 */
+    public static void setChunkedMode(int bytes) { chunkSize = bytes; }
 
     public OkHttpExoDataSource(OkHttpClient client) {
         super(true);
@@ -29,8 +33,15 @@ public class OkHttpExoDataSource extends BaseDataSource {
         Request.Builder builder = new Request.Builder()
                 .url(dataSpec.uri.toString());
 
-        // Range 请求（首次/seek 都发）
-        builder.header("Range", "bytes=" + dataSpec.position + "-");
+        // 分块模式：每次只请求 chunkSize 字节（如 10MB），避免云盘风控
+        long rangeEnd = -1;
+        if (chunkSize > 0 && dataSpec.length > chunkSize) {
+            rangeEnd = dataSpec.position + chunkSize - 1;
+        }
+        String range = rangeEnd > 0
+                ? "bytes=" + dataSpec.position + "-" + rangeEnd
+                : "bytes=" + dataSpec.position + "-";
+        builder.header("Range", range);
 
         if (dataSpec.httpRequestHeaders != null) {
             for (String key : dataSpec.httpRequestHeaders.keySet()) {
@@ -51,13 +62,21 @@ public class OkHttpExoDataSource extends BaseDataSource {
         bytesRead = 0;
         transferStarted(dataSpec);
         transferStarted = true;
-        return response.body().contentLength();
+
+        // 返回实际可读长度（分块模式下不超过 chunkSize）
+        long contentLen = response.body().contentLength();
+        if (chunkSize > 0 && contentLen > chunkSize) contentLen = chunkSize;
+        return contentLen;
     }
 
     @Override
     public int read(byte[] buffer, int offset, int readLength) throws IOException {
         if (bufferedInput == null) return -1;
-        int n = bufferedInput.read(buffer, offset, readLength);
+        // 分块模式下，读完块大小后截断
+        if (chunkSize > 0 && bytesRead >= chunkSize) return -1;
+        int maxRead = readLength;
+        if (chunkSize > 0) maxRead = (int) Math.min(readLength, chunkSize - bytesRead);
+        int n = bufferedInput.read(buffer, offset, maxRead);
         if (n > 0) {
             bytesRead += n;
             bytesTransferred(n);

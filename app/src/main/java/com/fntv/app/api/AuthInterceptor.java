@@ -37,11 +37,13 @@ public class AuthInterceptor implements Interceptor {
 
         Request.Builder requestBuilder = original.newBuilder()
                 .header("Content-Type", "application/json")
-                .header("Authx", authx)
-                .header("Cookie", "mode=relay");
+                .header("Authx", authx);
 
         if (token != null) {
             requestBuilder.header("Authorization", token);
+            requestBuilder.header("Cookie", "mode=relay; Trim-MC-token=" + token);
+        } else {
+            requestBuilder.header("Cookie", "mode=relay");
         }
 
         return chain.proceed(requestBuilder.build());

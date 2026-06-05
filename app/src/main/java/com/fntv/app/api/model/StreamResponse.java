@@ -13,6 +13,29 @@ public class StreamResponse {
     @SerializedName("video_stream")
     public VideoStreamInfo videoStream;
 
+    public ResponseHeader header;
+
+    @SerializedName("cloud_storage_info")
+    public CloudStorageInfo cloudStorageInfo;
+
+    /** 响应头（含 Cookie） */
+    public static class ResponseHeader {
+        public List<String> Cookie;
+    }
+
+    /** 云存储信息 */
+    public static class CloudStorageInfo {
+        @SerializedName("cloud_storage_type")
+        public int cloudStorageType;
+        public boolean valid;
+        @SerializedName("cloud_nick_name")
+        public String cloudNickName;
+        @SerializedName("is_vip")
+        public boolean isVip;
+        @SerializedName("quark_vip_type")
+        public String quarkVipType;
+    }
+
     /** 直链质量 */
     public static class DirectLinkQuality {
         public int bitrate;

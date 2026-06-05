@@ -39,7 +39,8 @@
             android:focusable="true"
             android:paddingLeft="14dp" android:paddingRight="14dp"
             android:layout_centerVertical="true"
-            android:layout_marginLeft="6dp" />
+            android:layout_marginLeft="6dp"
+            android:nextFocusDown="@+id/btnDanmu" />
 
         <TextView android:id="@+id/tvTitle"
             android:layout_width="wrap_content"
@@ -53,6 +54,22 @@
             android:text=""
             android:textColor="#FFF"
             android:textSize="14sp" />
+
+        <Button android:id="@+id/btnCloudMode"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentRight="true"
+            android:background="@drawable/bg_chip"
+            android:text="直链"
+            android:textColor="#81C784"
+            android:textSize="12sp"
+            android:focusable="true"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp"
+            android:layout_marginRight="6dp"
+            android:nextFocusUp="@+id/btnLock"
+            android:nextFocusDown="@+id/btnBack"
+            android:visibility="gone" />
     </RelativeLayout>
 
     <!-- 弹幕层（视频上方，控件下方） -->

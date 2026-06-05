@@ -33,6 +33,7 @@ public class PlayerActivity extends AppCompatActivity {
     private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
     private ImageView btnLock;
     private TextView tvTitle, tvDanmuStatus;
+    private Button btnCloudMode;
     private DanmuView danmuView;
     private View controller, infoPanel, topBar;
     private boolean isLocked = false, danmuOn = false;
@@ -54,6 +55,10 @@ public class PlayerActivity extends AppCompatActivity {
     private int seasonNumber = 1;
     private long backPressedTime = 0;
     private String pendingDanmuTitle, pendingDanmuGuid;
+    private boolean cloudDirectMode = true;
+    private int qualityIndex = 1;
+    private String[] qualityLabels;
+    private int qualityCount = 0;
     private static final String TAG = "Player";
 
     private static final int[] RATIO_MODES = {0, 3};
@@ -109,6 +114,7 @@ public class PlayerActivity extends AppCompatActivity {
         btnLock = (ImageView) findViewById(R.id.btnLock);
         tvTitle = findViewById(R.id.tvTitle);
         tvDanmuStatus = findViewById(R.id.tvDanmuStatus);
+        btnCloudMode = findViewById(R.id.btnCloudMode);
         topBar = findViewById(R.id.topBar);
         controller = findViewById(R.id.controller);
         infoPanel = findViewById(R.id.infoPanel);
@@ -164,6 +170,7 @@ public class PlayerActivity extends AppCompatActivity {
         btnCloseInfo.setOnClickListener(v -> { infoPanel.setVisibility(View.GONE); infoVis = false; });
         btnEpisodeList.setOnClickListener(v -> showEpisodePicker());
         btnNextEp.setOnClickListener(v -> playNextEp());
+        setupCloudModeToggle();
         setupFocusAutoHide();
 
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -256,16 +263,88 @@ public class PlayerActivity extends AppCompatActivity {
                             && info.item.mediaStream.resolutions != null
                             && !info.item.mediaStream.resolutions.isEmpty())
                         resolution = info.item.mediaStream.resolutions.get(0);
-                    startPlayback();
+
+                    // 获取直链信息，获取完后开始播放
+                    fetchCloudDirectLink(itemGuid);
                 }
             }
             @Override public void onFailure(retrofit2.Call<ApiResponse<PlayInfoResponse>> call, Throwable t) {}
         });
     }
 
+    private void fetchCloudDirectLink(final String itemGuid) {
+        if (mediaGuid == null) { startPlayback(); return; }
+        // 直接用 play/info 返回的 media_guid 调 stream 接口获取直链
+        Map<String, Object> streamReq = new HashMap<>();
+        Map<String, Object> header = new HashMap<>();
+        header.put("User-Agent", new String[]{"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"});
+        streamReq.put("header", header);
+        streamReq.put("level", 1);
+        streamReq.put("media_guid", mediaGuid);
+        // ip = 账号的 MD5 哈希（32位十六进制）
+        String account = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getString("user", "video");
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+            byte[] digest = md.digest(account.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b & 0xff));
+            streamReq.put("ip", sb.toString());
+        } catch (Exception e) {
+            streamReq.put("ip", "");
+        }
+        // 添加 nonce（桌面版 Go 代理也这么做）
+        streamReq.put("nonce", String.valueOf(100000 + (int)(Math.random() * 900000)));
+        String reqJson = new com.google.gson.Gson().toJson(streamReq);
+        Log.d(TAG, "getStream 请求体: " + reqJson);
+        Log.d(TAG, "getStream 请求URL: " + baseUrl + "/v/api/v1/stream");
+        apiManager.getApi().getStream(streamReq)
+            .enqueue(new retrofit2.Callback<ApiResponse<StreamResponse>>() {
+                @Override public void onResponse(retrofit2.Call<ApiResponse<StreamResponse>> call,
+                        retrofit2.Response<ApiResponse<StreamResponse>> r) {
+                    Log.d(TAG, "getStream resp code=" + r.code());
+                    String respBody = new com.google.gson.Gson().toJson(r.body());
+                    Log.d(TAG, "getStream 完整响应: " + respBody.substring(0, Math.min(1000, respBody.length())));
+                    if (r.isSuccessful() && r.body() != null && r.body().code == 0
+                            && r.body().data != null) {
+                        StreamResponse sd = r.body().data;
+                        Log.d(TAG, "getStream data class=" + sd.getClass().getName()
+                                + " dq=" + (sd.directLinkQualities != null ? sd.directLinkQualities.size() : "null"));
+                        if (sd.directLinkQualities != null && !sd.directLinkQualities.isEmpty()) {
+                            qualityCount = sd.directLinkQualities.size();
+                            qualityLabels = new String[qualityCount];
+                            for (int qi = 0; qi < qualityCount; qi++) {
+                                StreamResponse.DirectLinkQuality q = sd.directLinkQualities.get(qi);
+                                qualityLabels[qi] = q.resolution != null && !q.resolution.isEmpty() ? q.resolution : ("画质" + qi);
+                            }
+                            if (qualityIndex >= qualityCount) qualityIndex = 0;
+                            runOnUiThread(() -> {
+                                btnCloudMode.setVisibility(View.VISIBLE);
+                                updateCloudBtnText();
+                            });
+                        }
+                    } else {
+                        try { Log.e(TAG, "getStream error: " + (r.body() != null ? r.body().msg : r.message()));
+                        } catch (Exception ignored) {}
+                    }
+                    startPlayback();
+                }
+                @Override public void onFailure(retrofit2.Call<ApiResponse<StreamResponse>> call, Throwable t) {
+                    Log.e(TAG, "getStream onFailure: " + t.getMessage());
+                    startPlayback();
+                }
+            });
+    }
+
+    /** 开始播放（加载到 ExoPlayer） */
     private void startPlayback() {
         if (mediaGuid == null) return;
         String url = baseUrl + "/v/api/v1/media/range/" + mediaGuid;
+        if (cloudDirectMode && qualityCount > 0) {
+            url += "?direct_link_quality_index=" + qualityIndex;
+            Log.d(TAG, "播放模式: 直链 (NAS代理, index=" + qualityIndex + ") " + url);
+        } else {
+            Log.d(TAG, "播放模式: 代理 " + url);
+        }
         com.google.android.exoplayer2.upstream.DataSource.Factory f = () -> new OkHttpExoDataSource(apiManager.getClient());
         DefaultExtractorsFactory ef = new DefaultExtractorsFactory(); ef.setConstantBitrateSeekingEnabled(true);
         player.setMediaSource(new ProgressiveMediaSource.Factory(f, ef).createMediaSource(MediaItem.fromUri(url)));
@@ -419,12 +498,68 @@ public class PlayerActivity extends AppCompatActivity {
         handler.postDelayed(hideC, 5000);
     }
     private final Runnable hideC = () -> {
-        if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || topBar.hasFocus()) {
+        if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || topBar.hasFocus()) {
             resetHideTimer();
             return;
         }
         showCtrl(false);
     };
+
+    private void updateCloudBtnText() {
+        String mode = cloudDirectMode ? "直链" : "代理";
+        String ql = (qualityCount > 0 && qualityIndex < qualityCount && qualityLabels != null) ? qualityLabels[qualityIndex] : "";
+        btnCloudMode.setText(ql.isEmpty() ? mode : mode + "/" + ql);
+        btnCloudMode.setTextColor(cloudDirectMode ? 0xFF81C784 : 0xFFFFB74D);
+    }
+
+    private void setupCloudModeToggle() {
+        SharedPreferences p = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
+        cloudDirectMode = p.getBoolean("cloud_direct_mode", true);
+        qualityIndex = p.getInt("cloud_quality_index", 1);
+        updateCloudBtnText();
+        btnCloudMode.setOnClickListener(v -> showQualityMenu());
+    }
+
+    private void showQualityMenu() {
+        final String[] items;
+        if (qualityCount > 0 && qualityLabels != null) {
+            items = new String[qualityCount + 1];
+            for (int i = 0; i < qualityCount; i++) {
+                items[i] = (i == qualityIndex ? "✓ " : "  ") + qualityLabels[i] + (cloudDirectMode ? "" : " (直链)");
+            }
+            items[qualityCount] = cloudDirectMode ? "切换到代理模式" : "切换到直链模式 ✓";
+        } else {
+            items = new String[]{cloudDirectMode ? "切换到代理模式" : "切换到直链模式"};
+        }
+        final SharedPreferences sp = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("播放设置")
+                .setItems(items, (dialog, which) -> {
+                    if (qualityCount > 0 && which < qualityCount) {
+                        // 选择画质
+                        qualityIndex = which;
+                        cloudDirectMode = true;
+                        sp.edit().putInt("cloud_quality_index", qualityIndex)
+                                .putBoolean("cloud_direct_mode", true).apply();
+                        updateCloudBtnText();
+                        dialog.dismiss();
+                        Toast.makeText(this, "切换画质：" + qualityLabels[qualityIndex], Toast.LENGTH_SHORT).show();
+                        mediaGuid = null; seeked = false; seekTs = 0;
+                        loadPlayInfo();
+                    } else if (which == qualityCount) {
+                        // 切换直链/代理
+                        cloudDirectMode = !cloudDirectMode;
+                        sp.edit().putBoolean("cloud_direct_mode", cloudDirectMode).apply();
+                        updateCloudBtnText();
+                        dialog.dismiss();
+                        Toast.makeText(this, "已切换为" + (cloudDirectMode ? "直链" : "代理") + "模式", Toast.LENGTH_SHORT).show();
+                        mediaGuid = null; seeked = false; seekTs = 0;
+                        loadPlayInfo();
+                    }
+                })
+                .setNegativeButton("关闭", null)
+                .show();
+    }
 
     private void setupFocusAutoHide() {
         View.OnFocusChangeListener l = (v, hasFocus) -> {
@@ -441,6 +576,7 @@ public class PlayerActivity extends AppCompatActivity {
         btnBack.setOnFocusChangeListener(l);
         btnDanmu.setOnFocusChangeListener(l);
         btnLock.setOnFocusChangeListener(l);
+        btnCloudMode.setOnFocusChangeListener(l);
     };
 
     private void updateTime() {
@@ -1116,7 +1252,7 @@ public class PlayerActivity extends AppCompatActivity {
             switch (k) {
                 case KeyEvent.KEYCODE_BACK:
                     if (infoVis) { toggleInfo(); return true; }
-                    if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || topBar.hasFocus()) {
+                    if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || topBar.hasFocus()) {
                         controller.clearFocus();
                         topBar.clearFocus();
                         btnDanmu.clearFocus();
