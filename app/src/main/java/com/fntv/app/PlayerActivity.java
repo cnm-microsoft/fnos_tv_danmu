@@ -117,6 +117,9 @@ public class PlayerActivity extends AppCompatActivity {
         initPlayer();
 
         boolean savedDanmuOn = prefs.getBoolean("danmu_on", true);
+        danmuView.setShowScroll(prefs.getBoolean("danmu_scroll", true));
+        danmuView.setShowTop(prefs.getBoolean("danmu_top", true));
+        danmuView.setShowBottom(prefs.getBoolean("danmu_bottom", true));
         if (savedDanmuOn) {
             danmuOn = true;
             danmuView.setVisibility(View.VISIBLE);
@@ -495,6 +498,13 @@ public class PlayerActivity extends AppCompatActivity {
         final Switch sw = dialog.findViewById(R.id.dm_sw);
         sw.setChecked(isOn[0]);
 
+        final Switch swScroll = dialog.findViewById(R.id.dm_show_scroll);
+        final Switch swTop = dialog.findViewById(R.id.dm_show_top);
+        final Switch swBottom = dialog.findViewById(R.id.dm_show_bottom);
+        swScroll.setChecked(p.getBoolean("danmu_scroll", true));
+        swTop.setChecked(p.getBoolean("danmu_top", true));
+        swBottom.setChecked(p.getBoolean("danmu_bottom", true));
+
         final Button matchBtn = dialog.findViewById(R.id.dm_matchBtn);
         matchBtn.setOnClickListener(v -> { dialog.dismiss(); showDanmuSearch(); });
 
@@ -530,8 +540,16 @@ public class PlayerActivity extends AppCompatActivity {
                     .putFloat("danmu_fontsize",fs).putBoolean("danmu_outline",outline[0])
                     .putInt("danmu_density",dn).putInt("danmu_maxactive",mx)
                     .putInt("danmu_offset",of).putInt("danmu_maxcomments",mc)
-                    .putFloat("danmu_rowspacing",rs).apply();
-            if(isOn[0]) { danmuOn=true; danmuView.setVisibility(View.VISIBLE); btnDanmu.setText("弹✕");
+                    .putFloat("danmu_rowspacing",rs)
+                    .putBoolean("danmu_scroll", swScroll.isChecked())
+                    .putBoolean("danmu_top", swTop.isChecked())
+                    .putBoolean("danmu_bottom", swBottom.isChecked()).apply();
+            danmuView.setShowScroll(swScroll.isChecked());
+            danmuView.setShowTop(swTop.isChecked());
+            danmuView.setShowBottom(swBottom.isChecked());
+            if(isOn[0]) {
+                boolean wasOff = !danmuOn;
+                danmuOn=true; danmuView.setVisibility(View.VISIBLE); btnDanmu.setText("弹✕");
                 danmuView.setAreaPct(a); danmuView.setSpeedMul(sp); danmuView.setOpacity(op);
                 danmuView.setFontSize(fs); danmuView.setShowOutline(outline[0]);
                 danmuView.setMaxActive(mx); danmuView.setDensityPct(dn);
@@ -539,7 +557,7 @@ public class PlayerActivity extends AppCompatActivity {
                 danmuView.start();
                 if(danmuItems!=null) danmuView.loadDanmu(danmuItems);
                 // 从关闭→打开时，触发一次匹配
-                if (pendingDanmuTitle != null) loadDanmu(pendingDanmuTitle, pendingDanmuGuid);
+                if (wasOff && pendingDanmuTitle != null) loadDanmu(pendingDanmuTitle, pendingDanmuGuid);
             } else { danmuOn=false; danmuView.setVisibility(View.GONE); btnDanmu.setText("弹");
                 danmuView.stop(); danmuView.clear(); }
             dialog.dismiss();
@@ -754,8 +772,13 @@ public class PlayerActivity extends AppCompatActivity {
                         String[] parts = pVal.split(",");
                         try { dc.time = Float.parseFloat(parts[0].trim()); }
                         catch (Exception e2) { dc.time = 0; }
+                        // 解析弹幕模式：1=滚动 4=底部 5=顶部
+                        if (parts.length >= 2) {
+                            try { dc.type = Integer.parseInt(parts[1].trim()); }
+                            catch (Exception e2) { dc.type = 1; }
+                        }
                         if (parts.length >= 4) {
-                            try { dc.color = 0xFF000000 | (int) Long.parseLong(parts[3].trim()); }
+                            try { dc.color = 0xFF000000 | (int) Long.parseLong(parts[2].trim()); }
                             catch (Exception e2) { dc.color = 0xFFFFFFFF; }
                         } else {
                             dc.color = 0xFFFFFFFF;
@@ -763,8 +786,14 @@ public class PlayerActivity extends AppCompatActivity {
                     } else {
                         try { dc.time = Float.parseFloat(pVal); }
                         catch (Exception e2) { dc.time = 0; }
+                        dc.type = 1;
                         dc.color = 0xFF000000 | o.optInt("c", 0xFFFFFF);
                     }
+
+                    // 打印前 10 条弹幕的颜色和模式，方便调试
+                    if (i < 10) Log.d(TAG, "[弹幕#" + i + "] \"" + dc.text
+                            + "\" color=0x" + String.format("%08X", dc.color)
+                            + " mode=" + dc.type + " raw=" + pVal);
 
                     list.add(dc);
                 }
@@ -787,6 +816,7 @@ public class PlayerActivity extends AppCompatActivity {
             } catch(Exception e) { showDanmuStatus("弹幕失败: "+e.getMessage()); }
         }).start();
     }
+
 
     private void showDanmuStatus(String msg) {
         runOnUiThread(() -> {
