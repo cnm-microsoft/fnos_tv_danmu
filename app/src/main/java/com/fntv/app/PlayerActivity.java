@@ -53,6 +53,7 @@ public class PlayerActivity extends AppCompatActivity {
     private int currentEpIndex = -1;
     private int seasonNumber = 1;
     private long backPressedTime = 0;
+    private String pendingDanmuTitle, pendingDanmuGuid;
     private static final String TAG = "Player";
 
     private static final int[] RATIO_MODES = {0, 3};
@@ -537,6 +538,8 @@ public class PlayerActivity extends AppCompatActivity {
                 danmuView.setRowSpacing(rs);
                 danmuView.start();
                 if(danmuItems!=null) danmuView.loadDanmu(danmuItems);
+                // 从关闭→打开时，触发一次匹配
+                if (pendingDanmuTitle != null) loadDanmu(pendingDanmuTitle, pendingDanmuGuid);
             } else { danmuOn=false; danmuView.setVisibility(View.GONE); btnDanmu.setText("弹");
                 danmuView.stop(); danmuView.clear(); }
             dialog.dismiss();
@@ -801,6 +804,12 @@ public class PlayerActivity extends AppCompatActivity {
     };
 
     private void loadDanmu(String title, String guid) {
+        pendingDanmuTitle = title;
+        pendingDanmuGuid = guid;
+        if (!danmuOn) {
+            showDanmuStatus("弹幕: 已关闭，" + title + " 待匹配");
+            return;
+        }
         if (danmuUrl.isEmpty() || title == null) {
             showDanmuStatus("弹幕: 未配置服务器");
             return;
