@@ -199,13 +199,24 @@ public class HomeActivity extends AppCompatActivity {
         for (WatchRecord r : watchHistory.getTop(20)) {
             if (!r.isNearlyFinished()) watching.add(r);
         }
-        if (!watching.isEmpty()) {
-            addContinueWatching(moviesContainer, watching);
-        }
 
-        // 各媒体库：标题 + 预览容器
+        // 各媒体库：标题 + 预览容器（先建好，拿到第一个 viewAll 的 ID）
+        int firstViewAllId = -1;
         for (MediaDbItem lib : mediaLibraries) {
-            moviesContainer.addView(makeLibHeader(lib.guid, lib.title, 0));
+            LinearLayout headerRow = makeLibHeader(lib.guid, lib.title, 0);
+            moviesContainer.addView(headerRow);
+            // 找到 headerRow 里的 viewAll 按钮
+            for (int ci = 0; ci < headerRow.getChildCount(); ci++) {
+                View child = headerRow.getChildAt(ci);
+                if (child instanceof Button && child.isFocusable() && firstViewAllId < 0) {
+                    firstViewAllId = child.getId();
+                }
+            }
+            // 继续观看（放在第一个媒体库标题后，利用 firstViewAllId）
+            if (!watching.isEmpty()) {
+                addContinueWatching(moviesContainer, watching, firstViewAllId);
+                watching.clear(); // 只加一次
+            }
             // 预览卡片容器（暂空，loadAllPreviews 后填充）
             LinearLayout previewBox = new LinearLayout(this);
             previewBox.setLayoutParams(new LinearLayout.LayoutParams(
@@ -323,7 +334,7 @@ public class HomeActivity extends AppCompatActivity {
 
     // ==================== 继续观看 ====================
 
-    private void addContinueWatching(LinearLayout cont, List<WatchRecord> records) {
+    private void addContinueWatching(LinearLayout cont, List<WatchRecord> records, int viewAllId) {
         TextView h = new TextView(this);
         h.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -349,6 +360,8 @@ public class HomeActivity extends AppCompatActivity {
                     220, 380);
             lp.setMargins(10, 0, 10, 0);
             card.setLayoutParams(lp);
+            // 按↓强制到"查看全部"按钮
+            if (viewAllId > 0) card.setNextFocusDownId(viewAllId);
             row.addView(card);
         }
 
@@ -469,8 +482,8 @@ public class HomeActivity extends AppCompatActivity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(220, 380);
             lp.setMargins(10, 0, 10, 0);
             card.setLayoutParams(lp);
-            // 第一张卡片：按上回到"查看全部"按钮
-            if (i == 0 && focusUpTarget != null) {
+            // 所有卡片：按↑强制回到"查看全部"按钮
+            if (focusUpTarget != null) {
                 card.setNextFocusUpId(focusUpTarget.getId());
             }
             row.addView(card);
