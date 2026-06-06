@@ -1601,35 +1601,71 @@ public class HomeActivity extends AppCompatActivity {
 
     private void installApk(java.io.File apkFile) {
         try {
+            // 尝试多种安装方式，兼容电视设备
+            Intent install = null;
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                boolean hasInstallPermission = getPackageManager().canRequestPackageInstalls();
-                if (!hasInstallPermission) {
-                    // 引导用户开启安装权限
-                    android.net.Uri uri = android.net.Uri.fromFile(apkFile);
-                    Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
-                    intent.setData(android.net.Uri.parse("package:" + getPackageName()));
-                    startActivity(intent);
+                // 检查安装权限
+                if (!getPackageManager().canRequestPackageInstalls()) {
+                    Intent permIntent = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                    permIntent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                    startActivity(permIntent);
                     Toast.makeText(this, "请允许安装未知来源应用后重试", Toast.LENGTH_LONG).show();
                     resetUpdateBtn();
                     return;
                 }
+                // 方式1: 用 PackageInstaller API（兼容 Android TV）
+                try {
+                    android.net.Uri apkUri = androidx.core.content.FileProvider.getUriForFile(
+                            this, getPackageName() + ".fileprovider", apkFile);
+                    install = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+                    install.setData(apkUri);
+                    install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(install);
+                    return;
+                } catch (android.content.ActivityNotFoundException e1) {
+                    Log.w("Update", "ACTION_INSTALL_PACKAGE 不可用，尝试 ACTION_VIEW");
+                }
             }
 
-            Intent install = new Intent(Intent.ACTION_VIEW);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                android.net.Uri apkUri = androidx.core.content.FileProvider.getUriForFile(
-                        this, getPackageName() + ".fileprovider", apkFile);
-                install.setDataAndType(apkUri, "application/vnd.android.package-archive");
-                install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            } else {
-                install.setDataAndType(android.net.Uri.fromFile(apkFile), "application/vnd.android.package-archive");
+            // 方式2: 标准 ACTION_VIEW
+            try {
+                install = new Intent(Intent.ACTION_VIEW);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    android.net.Uri apkUri = androidx.core.content.FileProvider.getUriForFile(
+                            this, getPackageName() + ".fileprovider", apkFile);
+                    install.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                    install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } else {
+                    install.setDataAndType(android.net.Uri.fromFile(apkFile), "application/vnd.android.package-archive");
+                }
+                install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(install);
+                return;
+            } catch (android.content.ActivityNotFoundException e2) {
+                Log.w("Update", "ACTION_VIEW 不可用");
             }
-            install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(install);
+
+            // 方式3: 都没找到安装器，提示用户手动安装
+            final java.io.File apk = apkFile;
+            runOnUiThread(() -> {
+                new android.app.AlertDialog.Builder(this)
+                        .setTitle("安装失败")
+                        .setMessage("系统未找到安装器，请手动安装 APK 文件：\n" + apk.getAbsolutePath())
+                        .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
+                        .show();
+            });
         } catch (Exception e) {
             Log.e("Update", "安装失败", e);
-            Toast.makeText(this, "安装失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            resetUpdateBtn();
+            final java.io.File apk = apkFile;
+            runOnUiThread(() -> {
+                new android.app.AlertDialog.Builder(this)
+                        .setTitle("安装失败")
+                        .setMessage("错误：" + e.getMessage() + "\n请手动安装：\n" + apk.getAbsolutePath())
+                        .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
+                        .show();
+            });
         }
     }
 
