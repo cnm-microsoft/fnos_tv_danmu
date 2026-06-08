@@ -13,6 +13,15 @@ public class StreamResponse {
     @SerializedName("video_stream")
     public VideoStreamInfo videoStream;
 
+    @SerializedName("audio_streams")
+    public List<AudioStreamInfo> audioStreams;
+
+    @SerializedName("subtitle_streams")
+    public List<SubtitleStreamInfo> subtitleStreams;
+
+    @SerializedName("file_stream")
+    public FileStreamInfo fileStream;
+
     public ResponseHeader header;
 
     @SerializedName("cloud_storage_info")
@@ -65,5 +74,62 @@ public class StreamResponse {
         public String codecName;
         public String profile;
         public String level;
+        @SerializedName("bit_depth")
+        public int bitDepth;
+        @SerializedName("dv_profile")
+        public int dvProfile;
+        @SerializedName("r_frame_rate")
+        public String rFrameRate;
+        @SerializedName("color_space")
+        public String colorSpace;
+        @SerializedName("color_transfer")
+        public String colorTransfer;
+        @SerializedName("color_primaries")
+        public String colorPrimaries;
+        @SerializedName("pix_fmt")
+        public String pixFmt;
+        @SerializedName("bits_per_raw_sample")
+        public String bitsPerRawSample;
+        public int duration;
+    }
+
+    /** 字幕流信息 */
+    public static class SubtitleStreamInfo {
+        public String title;
+        public String language;
+        @SerializedName("codec_name")
+        public String codecName;
+        @SerializedName("is_external")
+        public int isExternal;
+        @SerializedName("is_default")
+        public int isDefault;
+    }
+
+    /** 音频流信息 */
+    public static class AudioStreamInfo {
+        public int bps;
+        public int channels;
+        @SerializedName("sample_rate")
+        public int sampleRate;
+        public String codec;
+        @SerializedName("codec_name")
+        public String codecName;
+        @SerializedName("audio_type")
+        public String audioType;
+        public String language;
+        public String profile;
+        @SerializedName("channel_layout")
+        public String channelLayout;
+        @SerializedName("is_default")
+        public int isDefault;
+    }
+
+    /** 文件信息 */
+    public static class FileStreamInfo {
+        public long size;
+        public String path;
+        @SerializedName("file_name")
+        public String fileName;
+        public int duration;
     }
 }

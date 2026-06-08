@@ -35,7 +35,7 @@ public class PlayerActivity extends AppCompatActivity {
     private SeekBar seekBar;
     private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
     private ImageView btnLock;
-    private TextView tvTitle, tvDanmuStatus, tvDanmuMatch;
+    private TextView tvTitle, tvDanmuStatus, tvDanmuMatch, infoTextAudio, infoTextExtra;
     private Button btnCloudMode;
     private DanmuView danmuView;
     private View controller, infoPanel, topBar;
@@ -71,6 +71,15 @@ public class PlayerActivity extends AppCompatActivity {
     private static final String[] RATIO_LABELS = {"适应", "拉伸"};
     private String actualVideoDecoder = "";
     private String actualAudioDecoder = "";
+    // 流 API 探测数据
+    private String streamVCodec = "", streamVProfile = "", streamVPixFmt = "", streamVColor = "", streamVFps = "";
+    private int streamVWidth = 0, streamVHeight = 0, streamVBitDepth = 0;
+    private boolean streamVHdr = false;
+    private long streamFileSize = 0;
+    private int streamDuration = 0; // 秒
+    private String streamContainer = "";
+    private java.util.List<StreamResponse.AudioStreamInfo> streamAudioTracks;
+    private java.util.List<StreamResponse.SubtitleStreamInfo> streamSubtitleTracks;
 
 
     @Override
@@ -136,6 +145,8 @@ public class PlayerActivity extends AppCompatActivity {
         controller = findViewById(R.id.controller);
         infoPanel = findViewById(R.id.infoPanel);
         infoText = findViewById(R.id.infoText);
+        infoTextAudio = findViewById(R.id.infoTextAudio);
+        infoTextExtra = findViewById(R.id.infoTextExtra);
 
         initPlayer();
 
@@ -390,7 +401,36 @@ public class PlayerActivity extends AppCompatActivity {
                         if (r.isSuccessful() && r.body() != null && r.body().code == 0
                                 && r.body().data != null) {
                             StreamResponse sd = r.body().data;
-                            if (sd.videoStream != null) streamBitrate = sd.videoStream.bps;
+                            if (sd.videoStream != null) {
+                                streamBitrate = sd.videoStream.bps;
+                                streamVCodec = sd.videoStream.codecName != null ? sd.videoStream.codecName : "";
+                                streamVProfile = sd.videoStream.profile != null ? sd.videoStream.profile : "";
+                                streamVWidth = sd.videoStream.width;
+                                streamVHeight = sd.videoStream.height;
+                                streamVBitDepth = sd.videoStream.bitDepth;
+                                streamVHdr = sd.videoStream.dvProfile > 0;
+                                streamVPixFmt = sd.videoStream.pixFmt != null ? sd.videoStream.pixFmt : "";
+                                streamVColor = sd.videoStream.colorPrimaries != null ? sd.videoStream.colorPrimaries : "";
+                                String cs = sd.videoStream.colorSpace != null ? sd.videoStream.colorSpace : "";
+                                if (!streamVColor.isEmpty() && !cs.isEmpty()) streamVColor += " " + cs;
+                                streamVFps = sd.videoStream.rFrameRate != null ? sd.videoStream.rFrameRate : "";
+                                streamDuration = sd.videoStream.duration;
+                            }
+                            // 文件信息
+                            if (sd.fileStream != null) {
+                                streamFileSize = sd.fileStream.size;
+                                String fn = sd.fileStream.fileName != null ? sd.fileStream.fileName : "";
+                                if (fn.contains(".")) streamContainer = fn.substring(fn.lastIndexOf('.') + 1).toLowerCase();
+                                if (streamDuration <= 0) streamDuration = sd.fileStream.duration;
+                            }
+                            // 音频流
+                            streamAudioTracks = sd.audioStreams;
+                            // 字幕流
+                            streamSubtitleTracks = sd.subtitleStreams;
+                            // 流 API 信息不全时用 MediaExtractor 补充
+                            if (streamVCodec.isEmpty() || streamContainer.isEmpty()) {
+                                probeWithMediaExtractor();
+                            }
                             qualityCount = sd.directLinkQualities != null ? sd.directLinkQualities.size() : 0;
                             if (qualityCount > 0) {
                                 qualityLabels = new String[qualityCount];
@@ -704,29 +744,145 @@ public class PlayerActivity extends AppCompatActivity {
     }
     private final Runnable timeR = () -> { if (player != null && player.isPlaying()) updateTime(); };
 
+    private String fmtAudioCodec(String name) {
+        if (name == null) return "?";
+        String n = name.toLowerCase();
+        if (n.contains("truehd")) return "Dolby TrueHD";
+        if (n.contains("eac3") || n.contains("ec3")) return "Dolby Digital Plus";
+        if (n.contains("ac3")) return "AC3";
+        if (n.contains("dts")) return n.contains("dts-hd") || n.contains("dtshd") ? "DTS-HD MA" : "DTS";
+        if (n.contains("mp4a") || n.contains("aac")) return "AAC";
+        if (n.contains("flac")) return "FLAC";
+        if (n.contains("opus")) return "OPUS";
+        if (n.contains("vorbis")) return "Vorbis";
+        if (n.contains("pcm")) return "PCM";
+        return name;
+    }
+    private String fmtVideoCodec(String name) {
+        if (name == null) return "?";
+        String n = name.toLowerCase();
+        if (n.contains("hevc") || n.contains("h265") || n.contains("h.265")) return "H.265";
+        if (n.contains("avc") || n.contains("h264") || n.contains("h.264")) return "H.264";
+        if (n.contains("vp9")) return "VP9";
+        if (n.contains("vp8")) return "VP8";
+        if (n.contains("av1")) return "AV1";
+        if (n.contains("mpeg")) return "MPEG";
+        return name.toUpperCase();
+    }
+
+    private void probeWithMediaExtractor() {
+        if (mediaGuid == null || baseUrl == null) return;
+        final String url = baseUrl + "/v/api/v1/media/range/" + mediaGuid;
+        new Thread(() -> {
+            try {
+                android.media.MediaExtractor ex = new android.media.MediaExtractor();
+                try {
+                    ex.setDataSource(url);
+                    for (int i = 0; i < ex.getTrackCount(); i++) {
+                        android.media.MediaFormat mf = ex.getTrackFormat(i);
+                        String mime = mf.getString(android.media.MediaFormat.KEY_MIME);
+                        if (mime == null) continue;
+                        if (mime.startsWith("video/")) {
+                            if (streamVWidth <= 0) streamVWidth = mf.containsKey(android.media.MediaFormat.KEY_WIDTH) ? mf.getInteger(android.media.MediaFormat.KEY_WIDTH) : 0;
+                            if (streamVHeight <= 0) streamVHeight = mf.containsKey(android.media.MediaFormat.KEY_HEIGHT) ? mf.getInteger(android.media.MediaFormat.KEY_HEIGHT) : 0;
+                            if (streamBitrate <= 0) streamBitrate = mf.containsKey(android.media.MediaFormat.KEY_BIT_RATE) ? mf.getInteger(android.media.MediaFormat.KEY_BIT_RATE) : 0;
+                            if (streamVCodec.isEmpty()) streamVCodec = mime.replace("video/", "");
+                        }
+                    }
+                } finally { ex.release(); }
+            } catch (Exception e) {
+                Log.w(TAG, "MediaExtractor 失败: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    private String fmtTime(int sec) {
+        if (sec <= 0) return "?";
+        int h = sec / 3600, m = (sec % 3600) / 60, s = sec % 60;
+        return h + "h" + (m < 10 ? "0" : "") + m + "m" + (s < 10 ? "0" : "") + s + "s";
+    }
+    private String fmtSize(long bytes) {
+        if (bytes <= 0) return "?";
+        if (bytes >= 1073741824L) return String.format("%.1f GB", bytes / 1073741824f);
+        if (bytes >= 1048576) return String.format("%.0f MB", bytes / 1048576f);
+        return bytes / 1024 + " KB";
+    }
+
     private void updateInfo() {
         if (player == null) return;
-        StringBuilder s = new StringBuilder();
-        Format vf = player.getVideoFormat(); Format af = player.getAudioFormat();
-        if (vf != null) {
-            s.append("分辨率 ").append(vf.width).append("x").append(vf.height);
-            if (vf.codecs != null) s.append("  ").append(vf.codecs);
-            s.append("\n码率 ").append(streamBitrate > 0 ? formatBitrate(streamBitrate) : (vf.bitrate > 0 ? vf.bitrate/1000 + "kbps" : "?"));
-            s.append("  帧率 ").append(vf.frameRate > 0 ? String.format("%.2f fps", vf.frameRate) : "未知");
-            s.append("  ").append(vf.colorInfo != null ? "HDR" : "SDR");
-        }
-        if (af != null) {
-            s.append("\n音频 ").append(af.codecs != null ? af.codecs : "?");
-            s.append("  ").append(af.channelCount > 0 ? af.channelCount + "ch" : "?");
-            s.append("  ").append(af.sampleRate > 0 ? af.sampleRate/1000 + "kHz" : "?");
-            s.append("  ").append(af.bitrate > 0 ? af.bitrate/1000 + "kbps" : "?");
-        }
-        // 视频解码器
-        s.append("\n视频解码 ").append(formatDecoder(actualVideoDecoder));
-        // 音频解码器
-        s.append("\n音频解码 ").append(formatDecoder(actualAudioDecoder));
+        Format vf = player.getVideoFormat();
+        Format af = player.getAudioFormat();
 
-        infoText.setText(s.toString());
+        // 视频（左列）
+        StringBuilder v = new StringBuilder();
+        v.append("── 视频 ──\n");
+        String codec = fmtVideoCodec(streamVCodec.isEmpty() ? (vf != null ? vf.codecs : null) : streamVCodec);
+        v.append("编码 ").append(codec).append("\n");
+        int w = streamVWidth > 0 ? streamVWidth : (vf != null ? vf.width : 0);
+        int h = streamVHeight > 0 ? streamVHeight : (vf != null ? vf.height : 0);
+        if (w > 0 && h > 0) v.append("分辨率 ").append(w).append("×").append(h).append("\n");
+        float fps = 0;
+        if (!streamVFps.isEmpty()) { try { fps = Float.parseFloat(streamVFps.replaceAll("[^0-9.]", "")); } catch (Exception ignored) {} }
+        if (fps <= 0 && vf != null) fps = vf.frameRate;
+        if (fps > 0) v.append("帧率 ").append(String.format("%.3f fps", fps)).append("\n");
+        if (streamBitrate > 0) v.append("码率 ").append(formatBitrate(streamBitrate)).append("\n");
+        else if (vf != null && vf.bitrate > 0) v.append("码率 ").append(vf.bitrate/1000).append("kbps\n");
+        if (streamVBitDepth > 0) v.append("色深 ").append(streamVBitDepth).append("bit\n");
+        if (streamVHdr || (vf != null && vf.colorInfo != null)) v.append("HDR10\n");
+        v.append("解码 ").append(actualVideoDecoder.isEmpty() ? (isHwDecode ? "硬解" : "软解") : actualVideoDecoder);
+        infoText.setText(v.toString());
+
+        // 音频（右列）
+        StringBuilder a = new StringBuilder();
+        a.append("── 音频 ──\n");
+        if (af != null) {
+            String ac = fmtAudioCodec(af.codecs != null ? af.codecs : af.sampleMimeType);
+            a.append("编码 ").append(ac).append("\n");
+            int ch = af.channelCount;
+            a.append("声道 ").append(ch > 0 ? (ch == 8 ? "7.1" : ch == 6 ? "5.1" : ch + "ch") : "?").append("\n");
+            a.append("采样 ").append(af.sampleRate > 0 ? af.sampleRate + "Hz" : "?").append("\n");
+            if (af.bitrate > 0) a.append("码率 ").append(af.bitrate/1000).append("kbps\n");
+            a.append("解码 ").append(actualAudioDecoder.isEmpty() ? (isHwDecode ? "硬解" : "软解") : actualAudioDecoder);
+        } else {
+            a.append("无音轨\n");
+        }
+        if (infoTextAudio != null) infoTextAudio.setText(a.toString());
+
+        // 额外信息（字幕、音轨、时长）
+        StringBuilder x = new StringBuilder();
+        // 额外音轨
+        if (streamAudioTracks != null && streamAudioTracks.size() > 1) {
+            for (int i = 1; i < streamAudioTracks.size(); i++) {
+                StreamResponse.AudioStreamInfo asi = streamAudioTracks.get(i);
+                String an = fmtAudioCodec(asi.codecName);
+                String al = asi.language != null && !asi.language.isEmpty() ? asi.language : "";
+                String ach = asi.channels > 0 ? (asi.channels == 8 ? "7.1" : asi.channels == 6 ? "5.1" : asi.channels + "ch") : "?";
+                String ab = asi.bps > 0 ? " " + formatBitrate(asi.bps) : "";
+                x.append("音轨").append(i + 1).append(" ").append(an);
+                if (!al.isEmpty()) x.append(" ").append(al);
+                x.append(" ").append(ach).append(ab).append("  ");
+            }
+        }
+        // 字幕
+        if (streamSubtitleTracks != null && !streamSubtitleTracks.isEmpty()) {
+            if (x.length() > 0) x.append("\n");
+            x.append("字幕 ");
+            for (int i = 0; i < streamSubtitleTracks.size(); i++) {
+                StreamResponse.SubtitleStreamInfo sub = streamSubtitleTracks.get(i);
+                if (i > 0) x.append("  ");
+                String sf = sub.codecName != null ? sub.codecName.toUpperCase() : "?";
+                String lang = sub.language != null && !sub.language.isEmpty() ? sub.language : "?";
+                String def = sub.isDefault != 0 ? "[默认]" : "";
+                x.append(sf).append(" ").append(lang).append(def);
+            }
+        }
+        // 时长
+        long durMs = player.getDuration();
+        if (durMs > 0) {
+            if (x.length() > 0) x.append("\n");
+            x.append("时长 ").append(fmtTime((int)(durMs/1000)));
+        }
+        if (infoTextExtra != null) infoTextExtra.setText(x.toString());
     }
 
     private String formatBitrate(int bps) {
