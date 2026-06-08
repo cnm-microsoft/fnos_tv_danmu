@@ -60,10 +60,13 @@ public class PlayerActivity extends AppCompatActivity {
     private String pendingDanmuTitle, pendingDanmuGuid;
     private String danmuMatchedName = "";
     private boolean cloudDirectMode = true;
+    private String cloudDirectUrl = "";
+    private boolean isStrmFile = false;
     private int seekStep = 10000;
     private int qualityIndex = 1;
     private int streamBitrate = 0; // bps 来自 stream API
     private String[] qualityLabels;
+    private String[] qualityUrls;
     private int qualityCount = 0;
     private static final String TAG = "Player";
 
@@ -417,11 +420,41 @@ public class PlayerActivity extends AppCompatActivity {
                                 streamDuration = sd.videoStream.duration;
                             }
                             // 文件信息
+                            boolean isStrm = false;
                             if (sd.fileStream != null) {
                                 streamFileSize = sd.fileStream.size;
                                 String fn = sd.fileStream.fileName != null ? sd.fileStream.fileName : "";
+                                String fp = sd.fileStream.path != null ? sd.fileStream.path : "";
                                 if (fn.contains(".")) streamContainer = fn.substring(fn.lastIndexOf('.') + 1).toLowerCase();
                                 if (streamDuration <= 0) streamDuration = sd.fileStream.duration;
+                                isStrm = fp.toLowerCase().endsWith(".strm") || fn.toLowerCase().endsWith(".strm");
+                            }
+                            // STRM 文件：必须使用直链，NAS 无法代理
+                            if (isStrm && sd.directLinkQualities != null && !sd.directLinkQualities.isEmpty()) {
+                                isStrmFile = true;
+                                String directUrl = sd.directLinkQualities.get(0).url;
+                                // 还原 & → &（JSON Unicode 转义）
+                                directUrl = directUrl.replace("\\u0026", "&");
+                                cloudDirectUrl = directUrl;
+                                cloudDirectMode = true;
+                                qualityCount = sd.directLinkQualities.size();
+                                qualityLabels = new String[qualityCount];
+                                qualityUrls = new String[qualityCount];
+                                for (int qi = 0; qi < qualityCount; qi++) {
+                                    StreamResponse.DirectLinkQuality dlq = sd.directLinkQualities.get(qi);
+                                    qualityLabels[qi] = dlq.resolution != null && !dlq.resolution.isEmpty()
+                                            ? dlq.resolution : ("画质" + qi);
+                                    String u = dlq.url != null ? dlq.url.replace("\\u0026", "&") : "";
+                                    qualityUrls[qi] = u;
+                                }
+                                if (qualityIndex >= qualityCount) qualityIndex = 0;
+                                // 使用当前选择的画质 URL
+                                cloudDirectUrl = qualityUrls[qualityIndex];
+                                Log.d(TAG, "STRM 文件，使用直链: " + cloudDirectUrl);
+                                runOnUiThread(() -> {
+                                    setCloudBtnVisible(true);
+                                    updateCloudBtnText();
+                                });
                             }
                             // 音频流
                             streamAudioTracks = sd.audioStreams;
@@ -460,11 +493,18 @@ public class PlayerActivity extends AppCompatActivity {
     /** 开始播放（加载到 ExoPlayer） */
     private void startPlayback() {
         if (mediaGuid == null) return;
-        String url = baseUrl + "/v/api/v1/media/range/" + mediaGuid;
-        if (cloudDirectMode && qualityCount > 0) {
-            url += "?direct_link_quality_index=" + qualityIndex;
+        String url;
+        if (!cloudDirectUrl.isEmpty()) {
+            // STRM 或夸克直链：直接用直链 URL
+            url = cloudDirectUrl;
+            if (isStrmFile) OkHttpExoDataSource.setChunkedMode(0); // STRM 不需要分块
+            else OkHttpExoDataSource.setChunkedMode(10 * 1024 * 1024);
+            Log.d(TAG, "播放模式: 直链 " + url);
+        } else if (cloudDirectMode && qualityCount > 0) {
+            url = baseUrl + "/v/api/v1/media/range/" + mediaGuid + "?direct_link_quality_index=" + qualityIndex;
             Log.d(TAG, "播放模式: 直链 (NAS代理, index=" + qualityIndex + ") " + url);
         } else {
+            url = baseUrl + "/v/api/v1/media/range/" + mediaGuid;
             Log.d(TAG, "播放模式: 代理 " + url);
         }
         com.google.android.exoplayer2.upstream.DataSource.Factory f = () -> new OkHttpExoDataSource(apiManager.getStreamClient());
@@ -644,16 +684,13 @@ public class PlayerActivity extends AppCompatActivity {
 
     private void setCloudBtnVisible(boolean vis) {
         btnCloudMode.setVisibility(vis ? View.VISIBLE : View.GONE);
-        if (tvDanmuMatch != null) {
-            tvDanmuMatch.setPaddingRelative(0, 0, vis ? 140 : 20, 0);
-        }
     }
 
     private void updateCloudBtnText() {
-        String mode = cloudDirectMode ? "直链" : "代理";
-        String ql = (cloudDirectMode && qualityCount > 0 && qualityIndex < qualityCount && qualityLabels != null) ? qualityLabels[qualityIndex] : "";
+        String mode = isStrmFile ? "STRM" : (cloudDirectMode ? "直链" : "代理");
+        String ql = qualityCount > 0 && qualityIndex < qualityCount && qualityLabels != null ? qualityLabels[qualityIndex] : "";
         btnCloudMode.setText(ql.isEmpty() ? mode : mode + "/" + ql);
-        btnCloudMode.setTextColor(cloudDirectMode ? 0xFF81C784 : 0xFFFFB74D);
+        btnCloudMode.setTextColor(isStrmFile || cloudDirectMode ? 0xFF81C784 : 0xFFFFB74D);
     }
 
     private void setupCloudModeToggle() {
@@ -666,7 +703,29 @@ public class PlayerActivity extends AppCompatActivity {
 
     private void showQualityMenu() {
         final SharedPreferences sp = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
-        if (cloudDirectMode && qualityCount > 0 && qualityLabels != null) {
+        if (isStrmFile && qualityCount > 0 && qualityLabels != null) {
+            // STRM 文件：只显示画质，不显示切换代理
+            final String[] items = new String[qualityCount];
+            for (int i = 0; i < qualityCount; i++) {
+                items[i] = (i == qualityIndex ? "✓ " : "  ") + qualityLabels[i];
+            }
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("画质选择")
+                .setItems(items, (dialog, which) -> {
+                    if (which < qualityCount) {
+                        qualityIndex = which;
+                        sp.edit().putInt("cloud_quality_index", qualityIndex).apply();
+                        updateCloudBtnText();
+                        dialog.dismiss();
+                        Toast.makeText(this, "切换画质：" + qualityLabels[qualityIndex], Toast.LENGTH_SHORT).show();
+                        // 直接重选播放，不清空 cloudDirectUrl
+                        mediaGuid = null; seeked = false; seekTs = 0;
+                        loadPlayInfo();
+                    }
+                })
+                .setNegativeButton("关闭", null)
+                .show();
+        } else if (cloudDirectMode && qualityCount > 0 && qualityLabels != null) {
             // 直链模式：显示画质列表 + 切换代理
             final String[] items = new String[qualityCount + 1];
             for (int i = 0; i < qualityCount; i++) {
@@ -1087,9 +1146,11 @@ public class PlayerActivity extends AppCompatActivity {
                             String t=o.optString("animeTitle","");
                             if(t.isEmpty()) t=o.optString("title","");
                             if(t.isEmpty()) t=o.optString("name","?");
+                            int epCount = o.optInt("episodeCount", 0);
+                            String label = epCount > 0 ? t + "  (" + epCount + "集)" : t;
                             Button b=new Button(this);
                             b.setBackgroundResource(R.drawable.bg_search_item);
-                            b.setText(t); b.setTextColor(0xFFEEEEEE);
+                            b.setText(label); b.setTextColor(0xFFEEEEEE);
                             b.setPadding(16,14,16,14); b.setAllCaps(false);
                             b.setTextSize(14);
                             b.setGravity(android.view.Gravity.START);
@@ -1147,9 +1208,18 @@ public class PlayerActivity extends AppCompatActivity {
                     new android.app.AlertDialog.Builder(this)
                             .setTitle("选择剧集")
                             .setItems(epLabels, (dialog, which) -> {
-                                if (which >= 0 && which < epCount && epIds[which] > 0)
+                                if (which >= 0 && which < epCount && epIds[which] > 0) {
+                                    // 保存手动匹配的番剧信息（给同系列其他集自动用）
+                                    if (animeId > 0 && animeName != null && itemTV != null && !itemTV.isEmpty()) {
+                                        try {
+                                            String cacheJson = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getString("danmu_match_cache", "{}");
+                                            org.json.JSONObject cache = new org.json.JSONObject(cacheJson);
+                                            cache.put(itemTV, animeId + "|" + animeName);
+                                            getSharedPreferences("fntv_prefs", MODE_PRIVATE).edit().putString("danmu_match_cache", cache.toString()).apply();
+                                        } catch (Exception ignored) {}
+                                    }
                                     loadDanmuByEp(epIds[which], animeName != null ? animeName + " " + epLabels[which] : null);
-                                else
+                                } else
                                     showDanmuStatus("弹幕: 无效剧集ID");
                             })
                             .setNegativeButton("取消", null)
@@ -1514,6 +1584,52 @@ public class PlayerActivity extends AppCompatActivity {
                         }
                     } catch (Exception e2) {
                         Log.d(TAG, "search fallback failed: " + e2.getMessage());
+                    }
+                }
+                // 从手动匹配缓存中查找
+                if (episodeId <= 0 && itemTV != null && !itemTV.isEmpty()) {
+                    try {
+                        String cacheJson = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getString("danmu_match_cache", "{}");
+                        org.json.JSONObject cache = new org.json.JSONObject(cacheJson);
+                        if (cache.has(itemTV)) {
+                            String val = cache.getString(itemTV);
+                            String[] parts = val.split("\\|", 2);
+                            if (parts.length == 2) {
+                                final int cachedAid = Integer.parseInt(parts[0]);
+                                final String cachedName = parts[1];
+                                showDanmuStatus("弹幕: 使用缓存 \"" + cachedName + "\" 匹配第" + targetEp + "集...");
+                                Log.d(TAG, "缓存命中: " + itemTV + " -> " + cachedName + " (aid=" + cachedAid + ")");
+                                // 直接调用 bangumi API 取剧集列表
+                                java.net.URL bu = new java.net.URL(danmuUrl + "/api/v2/bangumi/" + cachedAid);
+                                java.net.HttpURLConnection bc = (java.net.HttpURLConnection) bu.openConnection();
+                                bc.connect();
+                                java.io.BufferedReader br2 = new java.io.BufferedReader(
+                                        new java.io.InputStreamReader(bc.getInputStream(), "UTF-8"));
+                                StringBuilder bp2 = new StringBuilder(); String l3;
+                                while ((l3 = br2.readLine()) != null) bp2.append(l3);
+                                br2.close();
+                                org.json.JSONObject bj2 = new org.json.JSONObject(bp2.toString());
+                                org.json.JSONArray eps2 = null;
+                                if (bj2.has("bangumi") && bj2.getJSONObject("bangumi").has("episodes"))
+                                    eps2 = bj2.getJSONObject("bangumi").getJSONArray("episodes");
+                                else if (bj2.has("episodes")) eps2 = bj2.getJSONArray("episodes");
+                                else if (bj2.has("data") && bj2.getJSONObject("data").has("episodes"))
+                                    eps2 = bj2.getJSONObject("data").getJSONArray("episodes");
+                                if (eps2 != null) {
+                                    for (int ei = 0; ei < eps2.length(); ei++) {
+                                        org.json.JSONObject epo = eps2.getJSONObject(ei);
+                                        if (epo.optInt("episodeNumber", 0) == targetEp) {
+                                            episodeId = epo.optInt("episodeId", 0);
+                                            matchedName = cachedName + " 第" + targetEp + "集";
+                                            Log.d(TAG, "缓存匹配成功: epId=" + episodeId);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        Log.w(TAG, "缓存读取失败: " + e.getMessage());
                     }
                 }
                 if (episodeId <= 0) {

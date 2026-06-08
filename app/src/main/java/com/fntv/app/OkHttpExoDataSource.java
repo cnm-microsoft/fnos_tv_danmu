@@ -14,7 +14,10 @@ public class OkHttpExoDataSource extends BaseDataSource {
 
     private static final String TAG = "OkHttpDS";
     private static int chunkSize = 0; // 0 = 不分块
+    private static String cloudCookie = "";
     private final OkHttpClient client;
+
+    public static void setCloudCookie(String cookie) { cloudCookie = cookie; }
     private Response response;
     private BufferedInputStream bufferedInput;
     private long bytesRead;
@@ -42,6 +45,12 @@ public class OkHttpExoDataSource extends BaseDataSource {
                 ? "bytes=" + dataSpec.position + "-" + rangeEnd
                 : "bytes=" + dataSpec.position + "-";
         builder.header("Range", range);
+
+        // 云盘直链 Cookie
+        if (!cloudCookie.isEmpty()) {
+            builder.header("Cookie", cloudCookie);
+            builder.header("User-Agent", "Mozilla/5.0");
+        }
 
         if (dataSpec.httpRequestHeaders != null) {
             for (String key : dataSpec.httpRequestHeaders.keySet()) {
