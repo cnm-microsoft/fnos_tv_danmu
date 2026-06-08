@@ -59,7 +59,7 @@
         <TextView android:id="@+id/tvDanmuMatch"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:layout_toLeftOf="@+id/btnCloudMode"
+            android:layout_alignParentRight="true"
             android:layout_marginRight="4dp"
             android:gravity="center_vertical"
             android:maxWidth="200dp"
@@ -146,6 +146,15 @@
         android:nextFocusDown="@+id/btnInfo"
         android:visibility="invisible" />
 
+    <!-- 渐变遮罩（75%宽，控制栏下方） -->
+    <View
+        android:id="@+id/controllerOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:background="@drawable/bg_controller"
+        android:visibility="invisible" />
+
     <!-- 控制层 (底部深色渐变区) -->
     <LinearLayout
         android:id="@+id/controller"
@@ -154,7 +163,6 @@
         android:layout_gravity="bottom"
         android:orientation="vertical"
         android:paddingTop="28dp"
-        android:background="@drawable/bg_controller"
         android:visibility="invisible">
 
         <!-- 进度条 (细条) -->
@@ -198,9 +206,9 @@
             android:layout_height="56dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingBottom="8dp"
-            android:paddingLeft="8dp"
-            android:paddingRight="8dp">
+            android:paddingBottom="6dp"
+            android:paddingLeft="4dp"
+            android:paddingRight="4dp">
 
             <!-- 左区：播放控制 -->
             <LinearLayout
@@ -216,8 +224,9 @@
 
                     android:text="播放" android:textColor="#FFF"
                     android:textSize="14sp" android:focusable="true"
-                    android:layout_marginRight="8dp" android:gravity="center"
-                    android:paddingLeft="12dp" android:paddingRight="12dp"
+                    android:layout_marginRight="4dp" android:gravity="center"
+                    android:paddingLeft="15dp" android:paddingRight="15dp"
+                    android:minWidth="0dp" android:minHeight="0dp"
                     android:nextFocusUp="@+id/seekBar" />
 
                 <Button android:id="@+id/btnRewind"
@@ -225,31 +234,35 @@
                     android:background="@drawable/bg_chip" android:text="-10秒"
                     android:textColor="#DDD" android:textSize="13sp"
                     android:focusable="true"
-                    android:layout_marginRight="6dp" android:gravity="center"
-                    android:paddingLeft="10dp" android:paddingRight="10dp" />
+                    android:layout_marginRight="3dp" android:gravity="center"
+                    android:paddingLeft="12dp" android:paddingRight="12dp"
+                    android:minWidth="0dp" android:minHeight="0dp" />
 
                 <Button android:id="@+id/btnForward"
                     android:layout_width="wrap_content" android:layout_height="38dp"
                     android:background="@drawable/bg_chip" android:text="+10秒"
                     android:textColor="#DDD" android:textSize="13sp"
                     android:focusable="true"
-                    android:layout_marginRight="10dp" android:gravity="center"
-                    android:paddingLeft="10dp" android:paddingRight="10dp" />
+                    android:layout_marginRight="4dp" android:gravity="center"
+                    android:paddingLeft="12dp" android:paddingRight="12dp"
+                    android:minWidth="0dp" android:minHeight="0dp" />
 
                 <Button android:id="@+id/btnSpeed"
                     android:layout_width="wrap_content" android:layout_height="38dp"
                     android:background="@drawable/bg_chip" android:text="1x"
                     android:textColor="#EEE" android:textSize="13sp"
                     android:focusable="true" android:gravity="center"
-                    android:paddingLeft="12dp" android:paddingRight="20dp" />
+                    android:paddingLeft="15dp" android:paddingRight="18dp"
+                    android:minWidth="0dp" android:minHeight="0dp" />
 
                 <Button android:id="@+id/btnRatio"
                     android:layout_width="wrap_content" android:layout_height="38dp"
                     android:background="@drawable/bg_chip" android:text="比例"
                     android:textColor="#EEE" android:textSize="13sp"
                     android:focusable="true" android:gravity="center"
-                    android:paddingLeft="10dp" android:paddingRight="16dp"
-                    android:layout_marginLeft="6dp" />
+                    android:paddingLeft="12dp" android:paddingRight="15dp"
+                    android:layout_marginLeft="3dp"
+                    android:minWidth="0dp" android:minHeight="0dp" />
 
             </LinearLayout>
 
@@ -263,11 +276,12 @@
                 <Button android:id="@+id/btnEpisodeList"
                     android:layout_width="wrap_content" android:layout_height="34dp"
                     android:background="@drawable/bg_chip"
-                   
+
                     android:text="选集" android:textColor="#FFF"
                     android:textSize="12sp" android:focusable="true"
-                    android:layout_marginRight="4dp" android:gravity="center"
+                    android:layout_marginRight="3dp" android:gravity="center"
                     android:paddingLeft="12dp" android:paddingRight="12dp"
+                    android:minWidth="0dp" android:minHeight="0dp"
                     android:visibility="gone" />
 
                 <Button android:id="@+id/btnNextEp"
@@ -275,8 +289,9 @@
                     android:background="@drawable/bg_chip"
                     android:text="下一集" android:textColor="#FFF"
                     android:textSize="12sp" android:focusable="true"
-                    android:layout_marginRight="6dp" android:gravity="center"
+                    android:layout_marginRight="3dp" android:gravity="center"
                     android:paddingLeft="12dp" android:paddingRight="12dp"
+                    android:minWidth="0dp" android:minHeight="0dp"
                     android:visibility="gone" />
 
                 <Button android:id="@+id/btnInfo"
@@ -284,15 +299,16 @@
                     android:background="@drawable/bg_chip" android:text="信息"
                     android:textColor="#EEE" android:textSize="12sp"
                     android:focusable="true"
-                    android:layout_marginRight="4dp" android:gravity="center"
-                    android:paddingLeft="10dp" android:paddingRight="10dp"
+                    android:layout_marginRight="3dp" android:gravity="center"
+                    android:paddingLeft="12dp" android:paddingRight="12dp"
+                    android:minWidth="0dp" android:minHeight="0dp"
                     android:nextFocusUp="@+id/btnLock" />
 
             </LinearLayout>
 
-            </LinearLayout>
-
         </LinearLayout>
+
+    </LinearLayout>
 
     <!-- 信息面板 -->
     <LinearLayout

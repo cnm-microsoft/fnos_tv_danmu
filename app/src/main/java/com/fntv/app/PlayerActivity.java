@@ -38,7 +38,7 @@ public class PlayerActivity extends AppCompatActivity {
     private TextView tvTitle, tvDanmuStatus, tvDanmuMatch, infoTextAudio, infoTextExtra;
     private Button btnCloudMode;
     private DanmuView danmuView;
-    private View controller, infoPanel, topBar;
+    private View controller, controllerOverlay, infoPanel, topBar;
     private boolean isLocked = false, danmuOn = false;
     private List<DanmuView.DanmuComment> danmuItems;
     private String danmuUrl = "";
@@ -70,8 +70,8 @@ public class PlayerActivity extends AppCompatActivity {
     private int qualityCount = 0;
     private static final String TAG = "Player";
 
-    private static final int[] RATIO_MODES = {0, 3};
-    private static final String[] RATIO_LABELS = {"适应", "拉伸"};
+    private static final int[] RATIO_MODES = {0, 1, 2};
+    private static final String[] RATIO_LABELS = {"适应", "拉伸", "缩放"};
     private String actualVideoDecoder = "";
     private String actualAudioDecoder = "";
     // 流 API 探测数据
@@ -146,6 +146,25 @@ public class PlayerActivity extends AppCompatActivity {
         }
         topBar = findViewById(R.id.topBar);
         controller = findViewById(R.id.controller);
+        controllerOverlay = findViewById(R.id.controllerOverlay);
+        if (controllerOverlay != null) {
+            android.view.Display display = getWindowManager().getDefaultDisplay();
+            android.graphics.Point size = new android.graphics.Point();
+            display.getSize(size);
+            final int screenW = size.x;
+            ViewGroup.LayoutParams lp = controllerOverlay.getLayoutParams();
+            lp.width = (int)(screenW * 0.75f);
+            controllerOverlay.setLayoutParams(lp);
+            // 控制器布局变化时同步遮罩高度
+            controller.getViewTreeObserver().addOnGlobalLayoutListener(
+                new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+                    @Override public void onGlobalLayout() {
+                        if (controller.getHeight() > 0) {
+                            controllerOverlay.getLayoutParams().height = controller.getHeight();
+                        }
+                    }
+                });
+        }
         infoPanel = findViewById(R.id.infoPanel);
         infoText = findViewById(R.id.infoText);
         infoTextAudio = findViewById(R.id.infoTextAudio);
@@ -296,6 +315,17 @@ public class PlayerActivity extends AppCompatActivity {
                     startSave(); updateTime(); showCtrl(true);
                     btnPlayPause.setText(player.isPlaying() ? "暂停" : "播放");
                     if (danmuOn && danmuView != null) danmuView.resume();
+                    Format vf2 = player.getVideoFormat();
+                    if (vf2 != null && vf2.colorInfo != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        int cs = vf2.colorInfo.colorSpace;
+                        int ct = vf2.colorInfo.colorTransfer;
+                        boolean isHdr = cs >= 6 || ct == 7 || ct == 16 || ct == 18;
+                        if (isHdr) {
+                            getWindow().setColorMode(1); // COLOR_MODE_WIDE_COLOR_GAMUT = 1
+                            Log.d(TAG, "HDR 视频: cs=" + cs + " ct=" + ct + " 已激发宽色域");
+                            showDanmuStatus("HDR 模式已激活");
+                        }
+                    }
                     // 打印音轨信息
                     com.google.android.exoplayer2.Format af2 = player.getAudioFormat();
                     if (af2 != null) {
@@ -622,7 +652,20 @@ public class PlayerActivity extends AppCompatActivity {
     private void cycleRatio() {
         ratioIdx = (ratioIdx + 1) % RATIO_MODES.length;
         btnRatio.setText(RATIO_LABELS[ratioIdx]);
-        if (playerView != null) playerView.setResizeMode(RATIO_MODES[ratioIdx]);
+        if (playerView != null) {
+            playerView.setResizeMode(RATIO_MODES[ratioIdx]);
+            // 拉伸/缩放时把字幕上移，避免被裁切
+            if (playerView.getSubtitleView() != null) {
+                ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) playerView.getSubtitleView().getLayoutParams();
+                if (lp != null) {
+                    int bottom = RATIO_MODES[ratioIdx] == 0 ? 0 : (int)(55 * getResources().getDisplayMetrics().density);
+                    if (lp.bottomMargin != bottom) {
+                        lp.bottomMargin = bottom;
+                        playerView.getSubtitleView().setLayoutParams(lp);
+                    }
+                }
+            }
+        }
     }
 
     private void toggleInfo() {
@@ -658,6 +701,9 @@ public class PlayerActivity extends AppCompatActivity {
         }
         ctrlVis = show;
         controller.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+        if (controllerOverlay != null) {
+            controllerOverlay.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+        }
         topBar.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
         btnLock.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
         btnDanmu.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
@@ -684,6 +730,14 @@ public class PlayerActivity extends AppCompatActivity {
 
     private void setCloudBtnVisible(boolean vis) {
         btnCloudMode.setVisibility(vis ? View.VISIBLE : View.GONE);
+        // 按钮可见时给弹幕匹配名留出空间
+        if (tvDanmuMatch != null) {
+            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) tvDanmuMatch.getLayoutParams();
+            if (lp != null) {
+                lp.rightMargin = vis ? (int)(100 * getResources().getDisplayMetrics().density) : 20;
+                tvDanmuMatch.setLayoutParams(lp);
+            }
+        }
     }
 
     private void updateCloudBtnText() {
@@ -1383,15 +1437,81 @@ public class PlayerActivity extends AppCompatActivity {
             showDanmuStatus("弹幕: 未配置服务器");
             return;
         }
+        // 先提取目标集数
+        int cacheTargetEp = 0;
+        java.util.regex.Matcher cacheEpM = java.util.regex.Pattern.compile("[Ee](\\d+)").matcher(title);
+        if (cacheEpM.find()) cacheTargetEp = Integer.parseInt(cacheEpM.group(1));
+
+        // 检查缓存（异步，避免主线程网络请求）
+        if (itemTV != null && !itemTV.isEmpty() && cacheTargetEp > 0) {
+            final int fTargetEp = cacheTargetEp;
+            try {
+                String cacheJson = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getString("danmu_match_cache", "{}");
+                org.json.JSONObject cache = new org.json.JSONObject(cacheJson);
+                if (cache.has(itemTV)) {
+                    String val = cache.getString(itemTV);
+                    String[] parts = val.split("\\|", 2);
+                    if (parts.length == 2) {
+                        final int cachedAid = Integer.parseInt(parts[0]);
+                        final String cachedName = parts[1];
+                        showDanmuStatus("弹幕: 缓存命中 " + cachedName + "，匹配第" + fTargetEp + "集...");
+                        Log.d(TAG, "缓存命中: " + itemTV + " -> " + cachedName + " (aid=" + cachedAid + ")");
+                        new Thread(() -> {
+                            try {
+                                java.net.URL bu = new java.net.URL(danmuUrl + "/api/v2/bangumi/" + cachedAid);
+                                java.net.HttpURLConnection bc = (java.net.HttpURLConnection) bu.openConnection();
+                                bc.connect();
+                                java.io.BufferedReader br2 = new java.io.BufferedReader(
+                                        new java.io.InputStreamReader(bc.getInputStream(), "UTF-8"));
+                                StringBuilder bp2 = new StringBuilder(); String l3;
+                                while ((l3 = br2.readLine()) != null) bp2.append(l3);
+                                br2.close();
+                                org.json.JSONObject bj2 = new org.json.JSONObject(bp2.toString());
+                                org.json.JSONArray eps2 = null;
+                                if (bj2.has("bangumi") && bj2.getJSONObject("bangumi").has("episodes"))
+                                    eps2 = bj2.getJSONObject("bangumi").getJSONArray("episodes");
+                                else if (bj2.has("episodes")) eps2 = bj2.getJSONArray("episodes");
+                                else if (bj2.has("data") && bj2.getJSONObject("data").has("episodes"))
+                                    eps2 = bj2.getJSONObject("data").getJSONArray("episodes");
+                                if (eps2 != null) {
+                                    for (int ei = 0; ei < eps2.length(); ei++) {
+                                        org.json.JSONObject epo = eps2.getJSONObject(ei);
+                                        if (epo.optInt("episodeNumber", 0) == fTargetEp) {
+                                            int epId = epo.optInt("episodeId", 0);
+                                            if (epId > 0) {
+                                                final int fEpId = epId;
+                                                String epLabel = cachedName + " 第" + fTargetEp + "集";
+                                                updateDanmuMatchDisplay(epLabel);
+                                                loadDanmuByEp(fEpId, epLabel);
+                                                return;
+                                            }
+                                        }
+                                    }
+                                }
+                                // 缓存没找到对应集 → 走自动匹配
+                                Log.d(TAG, "缓存未找到第" + fTargetEp + "集，走自动匹配");
+                                startAutoMatch(title, fTargetEp);
+                            } catch (Exception e) {
+                                Log.w(TAG, "缓存请求失败: " + e.getMessage());
+                                startAutoMatch(title, fTargetEp);
+                            }
+                        }).start();
+                        return; // 缓存命中，异步处理
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 缓存未命中或无缓存 → 直接自动匹配
+        startAutoMatch(title, cacheTargetEp);
+    }
+
+    private void startAutoMatch(String title, int targetEp) {
         showDanmuStatus("弹幕: 正在匹配 \"" + title + "\"...");
         new Thread(() -> {
             try {
                 int episodeId = 0;
                 String matchedName = title;
-                // 从 title 中提取目标集数（格式 "X S01E05" → 5）
-                int targetEp = 0;
-                java.util.regex.Matcher epM = java.util.regex.Pattern.compile("[Ee](\\d+)").matcher(title);
-                if (epM.find()) targetEp = Integer.parseInt(epM.group(1));
                 Log.d(TAG, "目标集数: " + targetEp + " 来自: " + title);
 
                 // match 返回的番剧信息（若集数不匹配时用作搜索回退）
