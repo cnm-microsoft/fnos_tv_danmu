@@ -302,7 +302,8 @@
                     android:focusable="true"
                     android:gravity="center"
                     android:paddingLeft="8dp" android:paddingRight="8dp"
-                    android:minWidth="0dp" android:minHeight="0dp" />
+                    android:minWidth="0dp" android:minHeight="0dp"
+                    android:visibility="gone" />
 
             </LinearLayout>
 

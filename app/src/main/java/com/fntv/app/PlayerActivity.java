@@ -698,6 +698,7 @@ public class PlayerActivity extends AppCompatActivity {
     private void showBrightnessDialog() {
         SharedPreferences p = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
         int brightness = p.getInt("video_brightness", 100);
+        if (brightness > 100) brightness = 100;
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar);
         dialog.setContentView(R.layout.dialog_brightness);
         dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xDD1A1A1A));
@@ -723,7 +724,7 @@ public class PlayerActivity extends AppCompatActivity {
                 @Override public void onStopTrackingTouch(SeekBar s) {}
             });
         }
-        if (reset != null) reset.setOnClickListener(v -> { if (sb != null) { sb.setProgress(100); applyBrightness(100); } });
+        if (reset != null) reset.setOnClickListener(v -> { if (sb != null) { sb.setProgress(100); applyBrightness(100); if (label != null) label.setText("亮度: 0%"); } });
         if (cancel != null) cancel.setOnClickListener(v -> dialog.dismiss());
         if (ok != null) ok.setOnClickListener(v -> {
             if (sb != null) p.edit().putInt("video_brightness", sb.getProgress()).apply();
@@ -756,11 +757,16 @@ public class PlayerActivity extends AppCompatActivity {
         return streamVHdr || (!streamVColor.isEmpty() && (streamVColor.contains("bt2020") || streamVColor.contains("2020")));
     }
 
-    /** 调节屏幕亮度（仅当前 Activity） */
+    /** 调节屏幕亮度（仅当前 Activity），val 0~200，100=系统默认 */
     private void applyBrightness(int val) {
-        float f = val / 100f;
         android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
-        lp.screenBrightness = f;
+        if (val == 100) {
+            lp.screenBrightness = -1f; // 恢复系统默认
+        } else {
+            float f = val / 100f;
+            f = Math.max(0.01f, Math.min(1.0f, f));
+            lp.screenBrightness = f;
+        }
         getWindow().setAttributes(lp);
     }
 

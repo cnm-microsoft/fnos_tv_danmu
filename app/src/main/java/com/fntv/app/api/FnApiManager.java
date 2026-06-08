@@ -57,11 +57,22 @@ public class FnApiManager {
             }
             return builder.build();
         } catch (Exception e) {
-            OkHttpClient.Builder builder = new OkHttpClient.Builder().addInterceptor(authInterceptor);
+            OkHttpClient.Builder builder = new OkHttpClient.Builder().addInterceptor(authInterceptor)
+                    .hostnameVerifier(TRUST_ALL_HOSTS);
             if (streaming) {
                 builder.connectTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
                         .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS);
             }
+            try {
+                X509TrustManager fallbackTrust = new X509TrustManager() {
+                    @Override public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+                    @Override public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+                    @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                };
+                SSLContext sc = SSLContext.getInstance("TLS");
+                sc.init(null, new TrustManager[]{fallbackTrust}, new java.security.SecureRandom());
+                builder.sslSocketFactory(sc.getSocketFactory(), fallbackTrust);
+            } catch (Exception ignored) {}
             return builder.build();
         }
     }

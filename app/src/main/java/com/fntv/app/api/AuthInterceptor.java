@@ -36,7 +36,6 @@ public class AuthInterceptor implements Interceptor {
         String authx = FnAuthUtils.genAuthx(urlPath, jsonBody);
 
         Request.Builder requestBuilder = original.newBuilder()
-                .header("Content-Type", "application/json")
                 .header("Authx", authx);
 
         if (token != null) {
@@ -44,6 +43,10 @@ public class AuthInterceptor implements Interceptor {
             requestBuilder.header("Cookie", "mode=relay; Trim-MC-token=" + token);
         } else {
             requestBuilder.header("Cookie", "mode=relay");
+        }
+        // GET 请求不需要 Content-Type
+        if (!original.method().equalsIgnoreCase("GET") || original.body() != null) {
+            requestBuilder.header("Content-Type", "application/json");
         }
 
         return chain.proceed(requestBuilder.build());
