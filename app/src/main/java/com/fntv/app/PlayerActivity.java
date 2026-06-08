@@ -122,6 +122,13 @@ public class PlayerActivity extends AppCompatActivity {
         tvDanmuStatus = findViewById(R.id.tvDanmuStatus);
         btnCloudMode = findViewById(R.id.btnCloudMode);
         tvDanmuMatch = findViewById(R.id.tvDanmuMatch);
+        if (tvDanmuMatch != null) {
+            try {
+                java.lang.reflect.Field f = android.widget.TextView.class.getDeclaredField("mMarqueeSpeed");
+                f.setAccessible(true);
+                f.set(tvDanmuMatch, 2.0f);
+            } catch (Exception ignored) {}
+        }
         topBar = findViewById(R.id.topBar);
         controller = findViewById(R.id.controller);
         infoPanel = findViewById(R.id.infoPanel);
