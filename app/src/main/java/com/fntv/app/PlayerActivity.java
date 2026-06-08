@@ -36,7 +36,7 @@ public class PlayerActivity extends AppCompatActivity {
     private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
     private ImageView btnLock;
     private TextView tvTitle, tvDanmuStatus, tvDanmuMatch, infoTextAudio, infoTextExtra;
-    private Button btnCloudMode;
+    private Button btnCloudMode, btnBrightness;
     private DanmuView danmuView;
     private View controller, controllerOverlay, infoPanel, topBar;
     private boolean isLocked = false, danmuOn = false;
@@ -221,6 +221,13 @@ public class PlayerActivity extends AppCompatActivity {
             }
         });
         btnCloseInfo.setOnClickListener(v -> { infoPanel.setVisibility(View.GONE); infoVis = false; });
+        btnBrightness = findViewById(R.id.btnBrightness);
+        if (btnBrightness != null) {
+            btnBrightness.setOnClickListener(v -> showBrightnessDialog());
+        }
+        // 应用保存的亮度
+        int savedBright = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getInt("video_brightness", 100);
+        if (savedBright != 100) applyBrightness(savedBright);
         btnEpisodeList.setOnClickListener(v -> showEpisodePicker());
         btnNextEp.setOnClickListener(v -> playNextEp());
         setupCloudModeToggle();
@@ -315,17 +322,8 @@ public class PlayerActivity extends AppCompatActivity {
                     startSave(); updateTime(); showCtrl(true);
                     btnPlayPause.setText(player.isPlaying() ? "暂停" : "播放");
                     if (danmuOn && danmuView != null) danmuView.resume();
-                    Format vf2 = player.getVideoFormat();
-                    if (vf2 != null && vf2.colorInfo != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        int cs = vf2.colorInfo.colorSpace;
-                        int ct = vf2.colorInfo.colorTransfer;
-                        boolean isHdr = cs >= 6 || ct == 7 || ct == 16 || ct == 18;
-                        if (isHdr) {
-                            getWindow().setColorMode(1); // COLOR_MODE_WIDE_COLOR_GAMUT = 1
-                            Log.d(TAG, "HDR 视频: cs=" + cs + " ct=" + ct + " 已激发宽色域");
-                            showDanmuStatus("HDR 模式已激活");
-                        }
-                    }
+                    // HDR 检测（延时等格式就绪）
+                    checkHdr();
                     // 打印音轨信息
                     com.google.android.exoplayer2.Format af2 = player.getAudioFormat();
                     if (af2 != null) {
@@ -668,6 +666,75 @@ public class PlayerActivity extends AppCompatActivity {
         }
     }
 
+    private void checkHdr() {
+        handler.postDelayed(() -> {
+            if (player == null) return;
+            boolean isHdr = false;
+            // 1) 从 ExoPlayer 的 ColorInfo 检测
+            Format vf = player.getVideoFormat();
+            if (vf != null && vf.colorInfo != null) {
+                int cs = vf.colorInfo.colorSpace;
+                int ct = vf.colorInfo.colorTransfer;
+                isHdr = cs >= 6 || ct == 7 || ct == 16 || ct == 18;
+                Log.d(TAG, "HDR检查: cs=" + cs + " ct=" + ct + " isHdr=" + isHdr);
+            }
+            // 2) 从流 API 数据检测（ExoPlayer 可能不提取 colorInfo）
+            if (!isHdr) {
+                isHdr = streamVHdr || (!streamVColor.isEmpty() && (streamVColor.contains("bt2020") || streamVColor.contains("2020")));
+                Log.d(TAG, "HDR检查(流API): isHdr=" + isHdr + " streamVHdr=" + streamVHdr + " color=" + streamVColor);
+            }
+            if (isHdr && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                getWindow().setColorMode(1);
+                showDanmuStatus("HDR 模式已激活");
+            }
+        }, 1500);
+    }
+
+    private void showBrightnessDialog() {
+        SharedPreferences p = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
+        int brightness = p.getInt("video_brightness", 100);
+        final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar);
+        dialog.setContentView(R.layout.dialog_brightness);
+        dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xDD1A1A1A));
+
+        final TextView label = dialog.findViewById(R.id.dm_label);
+        final SeekBar sb = dialog.findViewById(R.id.dm_seekbar);
+        final Button cancel = dialog.findViewById(R.id.dm_cancel);
+        final Button ok = dialog.findViewById(R.id.dm_ok);
+        final Button reset = dialog.findViewById(R.id.dm_reset);
+
+        if (label != null) label.setText("亮度: " + (brightness - 100) + "%");
+        if (sb != null) {
+            sb.setMax(200);
+            sb.setProgress(brightness);
+            sb.setKeyProgressIncrement(5);
+            sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar seek, int val, boolean fromUser) {
+                    int adj = val - 100;
+                    if (label != null) label.setText("亮度: " + (adj > 0 ? "+" : "") + adj + "%");
+                    if (fromUser) applyBrightness(val);
+                }
+                @Override public void onStartTrackingTouch(SeekBar s) {}
+                @Override public void onStopTrackingTouch(SeekBar s) {}
+            });
+        }
+        if (reset != null) reset.setOnClickListener(v -> { if (sb != null) { sb.setProgress(100); applyBrightness(100); } });
+        if (cancel != null) cancel.setOnClickListener(v -> dialog.dismiss());
+        if (ok != null) ok.setOnClickListener(v -> {
+            if (sb != null) p.edit().putInt("video_brightness", sb.getProgress()).apply();
+            dialog.dismiss();
+        });
+        dialog.show();
+    }
+
+    /** 调节屏幕亮度（仅当前 Activity） */
+    private void applyBrightness(int val) {
+        float f = val / 100f;
+        android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = f;
+        getWindow().setAttributes(lp);
+    }
+
     private void toggleInfo() {
         infoVis = !infoVis; infoPanel.setVisibility(infoVis ? View.VISIBLE : View.GONE);
         if (infoVis) {
@@ -721,7 +788,7 @@ public class PlayerActivity extends AppCompatActivity {
         handler.postDelayed(hideC, 5000);
     }
     private final Runnable hideC = () -> {
-        if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || topBar.hasFocus()) {
+        if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || topBar.hasFocus()) {
             resetHideTimer();
             return;
         }
@@ -844,6 +911,7 @@ public class PlayerActivity extends AppCompatActivity {
         btnDanmu.setOnFocusChangeListener(l);
         btnLock.setOnFocusChangeListener(l);
         btnCloudMode.setOnFocusChangeListener(l);
+        if (btnBrightness != null) btnBrightness.setOnFocusChangeListener(l);
     };
 
     private void updateTime() {
@@ -1824,7 +1892,7 @@ public class PlayerActivity extends AppCompatActivity {
             switch (k) {
                 case KeyEvent.KEYCODE_BACK:
                     if (infoVis) { toggleInfo(); return true; }
-                    if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || topBar.hasFocus()) {
+                    if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || topBar.hasFocus()) {
                         controller.clearFocus();
                         topBar.clearFocus();
                         btnDanmu.clearFocus();
@@ -1843,7 +1911,7 @@ public class PlayerActivity extends AppCompatActivity {
                 case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
                     if (seekBar.hasFocus() || btnRewind.hasFocus() || btnForward.hasFocus()
                             || btnSpeed.hasFocus() || btnRatio.hasFocus() || btnInfo.hasFocus()
-                            || btnEpisodeList.hasFocus() || btnNextEp.hasFocus()) {
+                            || btnEpisodeList.hasFocus() || btnNextEp.hasFocus() || btnBrightness.hasFocus()) {
                         return true;
                     }
                     togglePlay(); return true;
@@ -1891,6 +1959,17 @@ public class PlayerActivity extends AppCompatActivity {
         android.app.UiModeManager uiModeManager = (android.app.UiModeManager) getSystemService(UI_MODE_SERVICE);
         return uiModeManager != null
                 && uiModeManager.getCurrentModeType() == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;
+    }
+
+    @Override
+    public void finish() {
+        // 退出时恢复系统亮度
+        try {
+            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.screenBrightness = -1f; // 恢复系统默认
+            getWindow().setAttributes(lp);
+        } catch (Exception ignored) {}
+        super.finish();
     }
 
     private void restoreOrientation() {

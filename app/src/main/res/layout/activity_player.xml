@@ -304,6 +304,15 @@
                     android:minWidth="0dp" android:minHeight="0dp"
                     android:nextFocusUp="@+id/btnLock" />
 
+                <Button android:id="@+id/btnBrightness"
+                    android:layout_width="wrap_content" android:layout_height="34dp"
+                    android:background="@drawable/bg_chip" android:text="亮度"
+                    android:textColor="#EEE" android:textSize="12sp"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:paddingLeft="8dp" android:paddingRight="8dp"
+                    android:minWidth="0dp" android:minHeight="0dp" />
+
             </LinearLayout>
 
         </LinearLayout>
@@ -378,7 +387,7 @@
             android:layout_height="36dp"
             android:layout_gravity="center"
             android:background="@drawable/bg_chip"
-           
+
             android:text="关闭"
             android:textColor="#FFF"
             android:focusable="true"
