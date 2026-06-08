@@ -56,6 +56,24 @@
             android:textColor="#FFF"
             android:textSize="14sp" />
 
+        <TextView android:id="@+id/tvDanmuMatch"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_toLeftOf="@+id/btnCloudMode"
+            android:layout_marginRight="6dp"
+            android:gravity="center_vertical"
+            android:maxWidth="200dp"
+            android:singleLine="true"
+            android:ellipsize="marquee"
+            android:marqueeRepeatLimit="marquee_forever"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:scrollHorizontally="true"
+            android:text=""
+            android:textColor="#FF81C784"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
         <Button android:id="@+id/btnCloudMode"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"

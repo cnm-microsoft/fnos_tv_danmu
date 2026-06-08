@@ -35,7 +35,7 @@ public class PlayerActivity extends AppCompatActivity {
     private SeekBar seekBar;
     private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
     private ImageView btnLock;
-    private TextView tvTitle, tvDanmuStatus;
+    private TextView tvTitle, tvDanmuStatus, tvDanmuMatch;
     private Button btnCloudMode;
     private DanmuView danmuView;
     private View controller, infoPanel, topBar;
@@ -58,6 +58,7 @@ public class PlayerActivity extends AppCompatActivity {
     private int seasonNumber = 1;
     private long backPressedTime = 0;
     private String pendingDanmuTitle, pendingDanmuGuid;
+    private String danmuMatchedName = "";
     private boolean cloudDirectMode = true;
     private int seekStep = 10000;
     private int qualityIndex = 1;
@@ -120,6 +121,7 @@ public class PlayerActivity extends AppCompatActivity {
         tvTitle = findViewById(R.id.tvTitle);
         tvDanmuStatus = findViewById(R.id.tvDanmuStatus);
         btnCloudMode = findViewById(R.id.btnCloudMode);
+        tvDanmuMatch = findViewById(R.id.tvDanmuMatch);
         topBar = findViewById(R.id.topBar);
         controller = findViewById(R.id.controller);
         infoPanel = findViewById(R.id.infoPanel);
@@ -945,6 +947,7 @@ public class PlayerActivity extends AppCompatActivity {
 
     private void loadDanmuByEp(int epId) { loadDanmuByEp(epId, null); }
     private void loadDanmuByEp(int epId, String epName) {
+        updateDanmuMatchDisplay(epName);
         showDanmuStatus(epName != null ? "弹幕: " + epName + " 获取数据..." : "弹幕: 获取数据...");
         new Thread(() -> {
             try {
@@ -1028,6 +1031,21 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
 
+    private void updateDanmuMatchDisplay(String name) {
+        danmuMatchedName = name != null ? name : "";
+        runOnUiThread(() -> {
+            if (tvDanmuMatch != null) {
+                if (!danmuMatchedName.isEmpty()) {
+                    tvDanmuMatch.setText(danmuMatchedName);
+                    tvDanmuMatch.setVisibility(View.VISIBLE);
+                    tvDanmuMatch.setSelected(true);
+                } else {
+                    tvDanmuMatch.setVisibility(View.GONE);
+                }
+            }
+        });
+    }
+
     private void showDanmuStatus(String msg) {
         runOnUiThread(() -> {
             if (tvDanmuStatus != null) {
@@ -1094,6 +1112,7 @@ public class PlayerActivity extends AppCompatActivity {
                             String matchEp = firstMatch.optString("episodeTitle", "");
                             if (!matchAnimeTitle.isEmpty())
                                 matchedName = matchAnimeTitle + (matchEp.isEmpty() ? "" : " " + matchEp);
+                            updateDanmuMatchDisplay(matchedName);
                             // 验证集数是否匹配
                             int matchedEpNum = 0;
                             java.util.regex.Matcher mEp = java.util.regex.Pattern.compile("[第](\\d+)[集]").matcher(matchEp);
@@ -1177,6 +1196,7 @@ public class PlayerActivity extends AppCompatActivity {
                                         if (epo.optInt("episodeNumber", 0) == targetEp) {
                                             episodeId = epo.optInt("episodeId", 0);
                                             matchedName = matchAnimeTitle + " 第" + targetEp + "集";
+                                            updateDanmuMatchDisplay(matchedName);
                                             Log.d(TAG, "direct bangumi match: targetEp=" + targetEp + " episodeId=" + episodeId);
                                             break;
                                         }
@@ -1259,6 +1279,7 @@ public class PlayerActivity extends AppCompatActivity {
                     showDanmuStatus("弹幕: 匹配失败，请手动匹配");
                     return;
                 }
+                updateDanmuMatchDisplay(matchedName);
                 loadDanmuByEp(episodeId, matchedName);
             } catch (Exception e) {
                 showDanmuStatus("弹幕加载失败: " + e.getMessage());
