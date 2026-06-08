@@ -1023,6 +1023,33 @@ public class PlayerActivity extends AppCompatActivity {
                 final int loaded = list.size();
                 runOnUiThread(()->{
                     danmuItems = list;
+                    // 弹幕时间戳压缩匹配视频时长
+                    long videoDur = 0;
+                    if (player != null && player.getDuration() > 0)
+                        videoDur = player.getDuration() / 1000;
+                    else if (itemDuration > 0)
+                        videoDur = itemDuration;
+                    if (videoDur > 0 && !list.isEmpty()) {
+                        float maxDanmuTime = list.get(list.size() - 1).time;
+                        if (maxDanmuTime > 0) {
+                            float ratio = (float) videoDur / maxDanmuTime;
+                            for (DanmuView.DanmuComment dc : list) {
+                                dc.time *= ratio;
+                            }
+                            Log.d(TAG, "[弹幕] 时间匹配 " + maxDanmuTime + "s → " + videoDur + "s ratio=" + String.format("%.3f", ratio));
+
+                            // 差距超过 ±5% 时警告
+                            if (ratio < 0.95f || ratio > 1.05f) {
+                                float diffPct = Math.abs((1f - ratio) * 100f);
+                                String direction = ratio < 1f ? "弹幕偏长" : "弹幕偏短";
+                                showDanmuStatus( direction
+                                        + " 弹幕=" + (int)maxDanmuTime + "s"
+                                        + " 视频=" + (int)videoDur + "s"
+                                        + " 差距=" + String.format("%.1f", diffPct) + "%");
+                            }
+                        }
+                    }
+
                     if (danmuView != null) {
                         danmuView.loadDanmu(list);
                         if (danmuOn) {
