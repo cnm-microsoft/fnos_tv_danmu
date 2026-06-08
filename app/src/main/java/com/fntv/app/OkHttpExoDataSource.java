@@ -16,6 +16,8 @@ public class OkHttpExoDataSource extends BaseDataSource {
     private static final String TAG = "OkHttpDS";
     private static int chunkSize = 0; // 0 = 不分块
     private static String cloudCookie = "";
+    public static int lastResponseCode = 0;
+    public static String lastContentType = "";
     private final OkHttpClient client;
 
     public static void setCloudCookie(String cookie) { cloudCookie = cookie; }
@@ -60,6 +62,9 @@ public class OkHttpExoDataSource extends BaseDataSource {
         }
 
         response = client.newCall(builder.build()).execute();
+
+        lastResponseCode = response.code();
+        lastContentType = response.header("Content-Type", "");
 
         if (response.code() != 200 && response.code() != 206) {
             response.close();

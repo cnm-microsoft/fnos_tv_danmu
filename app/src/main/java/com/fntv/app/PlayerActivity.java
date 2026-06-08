@@ -63,7 +63,9 @@ public class PlayerActivity extends AppCompatActivity {
     private String danmuMatchedName = "";
     private boolean cloudDirectMode = true;
     private String cloudDirectUrl = "";
+    private String playbackUrl = "";
     private boolean isStrmFile = false;
+    private boolean useHls = false;
     private int seekStep = 10000;
     private int qualityIndex = 1;
     private int streamBitrate = 0; // bps 来自 stream API
@@ -331,7 +333,27 @@ public class PlayerActivity extends AppCompatActivity {
             }
             int retryCount = 0;
             @Override public void onPlayerError(PlaybackException e) {
-                Log.e(TAG, "播放错误: " + e.getMessage() + "  retry=" + retryCount);
+                // 打印完整错误链
+                StringBuilder sb2 = new StringBuilder("播放错误: " + e.getMessage());
+                Throwable tc = e;
+                while (tc != null) {
+                    sb2.append("\n  ").append(tc.getClass().getSimpleName()).append(": ").append(tc.getMessage());
+                    tc = tc.getCause();
+                }
+                Log.e(TAG, sb2.toString());
+                // 按响应码切换：200→HLS, 206→渐进式
+                int code = OkHttpExoDataSource.lastResponseCode;
+                if (code == 200 && !useHls && !cloudDirectUrl.isEmpty()) {
+                    useHls = true;
+                    Log.d(TAG, "响应200，切换到HLS");
+                    switchMediaSource(true);
+                    return;
+                } else if (code == 206 && useHls && !cloudDirectUrl.isEmpty()) {
+                    useHls = false;
+                    Log.d(TAG, "响应206，切换到渐进式");
+                    switchMediaSource(false);
+                    return;
+                }
                 if (retryCount < 5 && player != null) {
                     retryCount++;
                     handler.postDelayed(() -> {
@@ -339,7 +361,7 @@ public class PlayerActivity extends AppCompatActivity {
                             player.prepare();
                             player.setPlayWhenReady(true);
                         }
-                    }, 2000 * retryCount); // 2s, 4s, 6s, 8s, 10s 递增
+                    }, 2000 * retryCount);
                 }
             }
         });
@@ -520,10 +542,19 @@ public class PlayerActivity extends AppCompatActivity {
             Log.d(TAG, "播放模式: 代理 " + url);
         }
         com.google.android.exoplayer2.upstream.DataSource.Factory f = () -> new OkHttpExoDataSource(apiManager.getStreamClient());
-        if (isStrmFile || url.contains(".m3u8")) {
+        // 检测内容类型：HEAD 请求获取 Content-Type
+        useHls = url.contains(".m3u8");
+        if (!useHls && !cloudDirectUrl.isEmpty()) {
+            // 默认按文件特征推断
+            useHls = isStrmFile;
+            Log.d(TAG, "直链模式: isStrm=" + isStrmFile + " useHls=" + useHls);
+        }
+        if (useHls) {
             player.setMediaSource(new com.google.android.exoplayer2.source.hls.HlsMediaSource.Factory(f).createMediaSource(MediaItem.fromUri(url)));
+            Log.d(TAG, "播放器: HLS");
         } else {
             player.setMediaSource(new com.google.android.exoplayer2.source.ProgressiveMediaSource.Factory(f, new DefaultExtractorsFactory()).createMediaSource(MediaItem.fromUri(url)));
+            Log.d(TAG, "播放器: 渐进式");
         }
         player.prepare(); player.setPlayWhenReady(true);
         Log.d(TAG, "startPlayback: parentGuid=" + parentGuid + " episodeList=" + (episodeList != null ? episodeList.size() : "null") + " loadingEp=" + loadingEpisodes);
@@ -698,6 +729,21 @@ public class PlayerActivity extends AppCompatActivity {
         return false;
     }
 
+
+    private void switchMediaSource(boolean toHls) {
+        if (player == null || cloudDirectUrl.isEmpty()) return;
+        handler.post(() -> {
+            String u = cloudDirectUrl;
+            com.google.android.exoplayer2.upstream.DataSource.Factory f2 = () -> new OkHttpExoDataSource(apiManager.getStreamClient());
+            com.google.android.exoplayer2.source.MediaSource ms = toHls
+                    ? new com.google.android.exoplayer2.source.hls.HlsMediaSource.Factory(f2).createMediaSource(MediaItem.fromUri(u))
+                    : new com.google.android.exoplayer2.source.ProgressiveMediaSource.Factory(f2, new DefaultExtractorsFactory()).createMediaSource(MediaItem.fromUri(u));
+            player.stop();
+            player.setMediaSource(ms);
+            player.prepare();
+            player.setPlayWhenReady(true);
+        });
+    }
 
     private void showBrightnessDialog() {
         SharedPreferences p = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
