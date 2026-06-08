@@ -1,7 +1,7 @@
 {
-    "versionCode": 10,
-    "versionName": "1.1.0",
-    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.1.0/FNTV_release_v1.1.0_20260608_2213.apk",
-    "changelog": "1. 优化播放器。 \n2. 增加STRM支持。 \n",
+    "versionCode": 11,
+    "versionName": "1.1.1",
+    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.1.1/FNTV_release_v1.1.1_20260608_2345.apk",
+    "changelog": "1. 兼容STRM m3u8格式。 \n",
     "forceUpdate": false
   }

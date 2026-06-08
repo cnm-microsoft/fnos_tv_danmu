@@ -20,6 +20,7 @@ import com.fntv.app.api.FnApiManager;
 import com.fntv.app.api.model.*;
 import com.google.android.exoplayer2.*;
 import com.google.android.exoplayer2.source.ProgressiveMediaSource;
+import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
 import com.google.android.exoplayer2.ui.PlayerView;
@@ -519,8 +520,11 @@ public class PlayerActivity extends AppCompatActivity {
             Log.d(TAG, "播放模式: 代理 " + url);
         }
         com.google.android.exoplayer2.upstream.DataSource.Factory f = () -> new OkHttpExoDataSource(apiManager.getStreamClient());
-        DefaultExtractorsFactory ef = new DefaultExtractorsFactory(); ef.setConstantBitrateSeekingEnabled(true);
-        player.setMediaSource(new ProgressiveMediaSource.Factory(f, ef).createMediaSource(MediaItem.fromUri(url)));
+        if (isStrmFile || url.contains(".m3u8")) {
+            player.setMediaSource(new com.google.android.exoplayer2.source.hls.HlsMediaSource.Factory(f).createMediaSource(MediaItem.fromUri(url)));
+        } else {
+            player.setMediaSource(new com.google.android.exoplayer2.source.ProgressiveMediaSource.Factory(f, new DefaultExtractorsFactory()).createMediaSource(MediaItem.fromUri(url)));
+        }
         player.prepare(); player.setPlayWhenReady(true);
         Log.d(TAG, "startPlayback: parentGuid=" + parentGuid + " episodeList=" + (episodeList != null ? episodeList.size() : "null") + " loadingEp=" + loadingEpisodes);
         if (parentGuid != null && !parentGuid.isEmpty() && episodeList == null && !loadingEpisodes) loadEpisodeList();

@@ -1,6 +1,7 @@
 package com.fntv.app;
 
 import android.net.Uri;
+import android.util.Log;
 import com.google.android.exoplayer2.upstream.BaseDataSource;
 import com.google.android.exoplayer2.upstream.DataSpec;
 import java.io.BufferedInputStream;
@@ -45,11 +46,11 @@ public class OkHttpExoDataSource extends BaseDataSource {
                 ? "bytes=" + dataSpec.position + "-" + rangeEnd
                 : "bytes=" + dataSpec.position + "-";
         builder.header("Range", range);
+        builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
 
         // 云盘直链 Cookie
         if (!cloudCookie.isEmpty()) {
             builder.header("Cookie", cloudCookie);
-            builder.header("User-Agent", "Mozilla/5.0");
         }
 
         if (dataSpec.httpRequestHeaders != null) {
@@ -62,8 +63,11 @@ public class OkHttpExoDataSource extends BaseDataSource {
 
         if (response.code() != 200 && response.code() != 206) {
             response.close();
-            throw new IOException("HTTP " + response.code());
+            throw new IOException("HTTP " + response.code() + " " + response.message());
         }
+        String ct = response.header("Content-Type");
+        long len = response.body() != null ? response.body().contentLength() : -1;
+        Log.d(TAG, "open: code=" + response.code() + " type=" + ct + " len=" + len);
 
         InputStream rawIn = response.body().byteStream();
         bufferedInput = new BufferedInputStream(rawIn, 65536);
