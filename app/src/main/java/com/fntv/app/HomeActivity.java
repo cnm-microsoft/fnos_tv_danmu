@@ -209,14 +209,14 @@ public class HomeActivity extends AppCompatActivity {
         }
 
         // 各媒体库：标题 + 预览容器
-        int firstViewAllId = -1;
+        java.util.ArrayList<Integer> viewAllIds = new java.util.ArrayList<>();
         for (MediaDbItem lib : mediaLibraries) {
             LinearLayout headerRow = makeLibHeader(lib.guid, lib.title, 0);
             moviesContainer.addView(headerRow);
             for (int ci = 0; ci < headerRow.getChildCount(); ci++) {
                 View child = headerRow.getChildAt(ci);
-                if (child instanceof Button && child.isFocusable() && firstViewAllId < 0) {
-                    firstViewAllId = child.getId();
+                if (child instanceof Button && child.isFocusable()) {
+                    viewAllIds.add(child.getId());
                 }
             }
             // 预览卡片容器（暂空，loadAllPreviews 后填充）
@@ -228,6 +228,18 @@ public class HomeActivity extends AppCompatActivity {
             previewBox.setTag("preview_" + lib.guid);
             moviesContainer.addView(previewBox);
             moviesContainer.addView(makeSpacer(16));
+        }
+
+        // 继续观看卡片 ↓ 第一个查看全部
+        int firstViewAllId = !viewAllIds.isEmpty() ? viewAllIds.get(0) : -1;
+        if (firstViewAllId > 0 && !watching.isEmpty()) {
+            for (int wi = 0; wi < moviesContainer.getChildCount(); wi++) {
+                View child = moviesContainer.getChildAt(wi);
+                if (child instanceof HorizontalScrollView) {
+                    setFocusDownInContainer((ViewGroup) child, firstViewAllId);
+                    break;
+                }
+            }
         }
 
         if (moviesContainer.getChildCount() == 0) {
@@ -449,6 +461,18 @@ public class HomeActivity extends AppCompatActivity {
         return card;
     }
 
+    private void setFocusDownInContainer(ViewGroup group, int targetId) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View v = group.getChildAt(i);
+            if (v.isFocusable()) {
+                v.setNextFocusDownId(targetId);
+            }
+            if (v instanceof ViewGroup) {
+                setFocusDownInContainer((ViewGroup) v, targetId);
+            }
+        }
+    }
+
     // ==================== 横向滚动卡片 ====================
 
     private void populateGrid(LinearLayout cont, List<PlayListItem> items) {
@@ -461,20 +485,38 @@ public class HomeActivity extends AppCompatActivity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(12, 8, 12, 8);
 
-        // 找到 cont 的前一个兄弟（headerRow），取其 viewAll 按钮用于焦点关联
+        // 找到 cont 前后的 headerRow，取 viewAll 按钮
         View focusUpTarget = null;
+        View focusDownTarget = null;
         if (cont.getParent() instanceof ViewGroup) {
             ViewGroup parent = (ViewGroup) cont.getParent();
             int idx = parent.indexOfChild(cont);
-            if (idx > 0 && parent.getChildAt(idx - 1) instanceof ViewGroup) {
-                ViewGroup headerRow = (ViewGroup) parent.getChildAt(idx - 1);
-                // 从 headerRow 里找到 viewAll 按钮
-                for (int ci = 0; ci < headerRow.getChildCount(); ci++) {
-                    View child = headerRow.getChildAt(ci);
-                    if (child instanceof Button && child.isFocusable()) {
-                        focusUpTarget = child;
-                        break;
+            // 前面的 headerRow（当前分类的查看全部）
+            for (int si = idx - 1; si >= 0; si--) {
+                View v = parent.getChildAt(si);
+                if (v instanceof ViewGroup) {
+                    for (int ci = 0; ci < ((ViewGroup) v).getChildCount(); ci++) {
+                        View child = ((ViewGroup) v).getChildAt(ci);
+                        if (child instanceof Button && child.isFocusable()) {
+                            focusUpTarget = child;
+                            break;
+                        }
                     }
+                    if (focusUpTarget != null) break;
+                }
+            }
+            // 后面的 headerRow（下一个分类的查看全部）
+            for (int si = idx + 1; si < parent.getChildCount(); si++) {
+                View v = parent.getChildAt(si);
+                if (v instanceof ViewGroup) {
+                    for (int ci = 0; ci < ((ViewGroup) v).getChildCount(); ci++) {
+                        View child = ((ViewGroup) v).getChildAt(ci);
+                        if (child instanceof Button && child.isFocusable()) {
+                            focusDownTarget = child;
+                            break;
+                        }
+                    }
+                    if (focusDownTarget != null) break;
                 }
             }
         }
@@ -484,11 +526,9 @@ public class HomeActivity extends AppCompatActivity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(220, 380);
             lp.setMargins(10, 0, 10, 0);
             card.setLayoutParams(lp);
-            // 所有卡片：按↑↓强制回到"查看全部"按钮
-            if (focusUpTarget != null) {
-                card.setNextFocusUpId(focusUpTarget.getId());
-                card.setNextFocusDownId(focusUpTarget.getId());
-            }
+            // 卡片：↑到当前查看全部，↓到下一个查看全部
+            if (focusUpTarget != null) card.setNextFocusUpId(focusUpTarget.getId());
+            if (focusDownTarget != null) card.setNextFocusDownId(focusDownTarget.getId());
             row.addView(card);
         }
 

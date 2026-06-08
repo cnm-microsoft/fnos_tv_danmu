@@ -698,20 +698,17 @@ public class PlayerActivity extends AppCompatActivity {
     private void showBrightnessDialog() {
         SharedPreferences p = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
         int brightness = p.getInt("video_brightness", 100);
-        boolean hdrOn = p.getBoolean("hdr_enabled", true);
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar);
         dialog.setContentView(R.layout.dialog_brightness);
         dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xDD1A1A1A));
 
         final TextView label = dialog.findViewById(R.id.dm_label);
         final SeekBar sb = dialog.findViewById(R.id.dm_seekbar);
-        final Switch hdrSw = dialog.findViewById(R.id.dm_hdr_switch);
         final Button cancel = dialog.findViewById(R.id.dm_cancel);
         final Button ok = dialog.findViewById(R.id.dm_ok);
         final Button reset = dialog.findViewById(R.id.dm_reset);
 
         if (label != null) label.setText("亮度: " + (brightness - 100) + "%");
-        if (hdrSw != null) hdrSw.setChecked(hdrOn);
         if (sb != null) {
             sb.setMax(200);
             sb.setProgress(brightness);
@@ -730,10 +727,6 @@ public class PlayerActivity extends AppCompatActivity {
         if (cancel != null) cancel.setOnClickListener(v -> dialog.dismiss());
         if (ok != null) ok.setOnClickListener(v -> {
             if (sb != null) p.edit().putInt("video_brightness", sb.getProgress()).apply();
-            if (hdrSw != null) {
-                p.edit().putBoolean("hdr_enabled", hdrSw.isChecked()).apply();
-                applyHdrMode(); // 立即生效
-            }
             dialog.dismiss();
         });
         dialog.show();
@@ -742,11 +735,14 @@ public class PlayerActivity extends AppCompatActivity {
     private void applyHdrMode() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return;
         boolean enabled = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getBoolean("hdr_enabled", true);
-        if (enabled && isHdrVideo()) {
+        boolean videoHdr = isHdrVideo();
+        Log.d(TAG, "applyHdrMode: enabled=" + enabled + " videoHdr=" + videoHdr);
+        if (enabled && videoHdr) {
             getWindow().setColorMode(1);
-            Log.d(TAG, "HDR 已开启");
+            showDanmuStatus("HDR 已开启");
         } else {
-            getWindow().setColorMode(0); // 恢复默认
+            getWindow().setColorMode(0);
+            if (videoHdr) showDanmuStatus("HDR 已关闭");
         }
     }
 
