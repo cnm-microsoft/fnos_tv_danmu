@@ -146,15 +146,6 @@
         android:nextFocusDown="@+id/btnInfo"
         android:visibility="invisible" />
 
-    <!-- 渐变遮罩（75%宽，控制栏下方） -->
-    <View
-        android:id="@+id/controllerOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_gravity="bottom|center_horizontal"
-        android:background="@drawable/bg_controller"
-        android:visibility="invisible" />
-
     <!-- 控制层 (底部深色渐变区) -->
     <LinearLayout
         android:id="@+id/controller"

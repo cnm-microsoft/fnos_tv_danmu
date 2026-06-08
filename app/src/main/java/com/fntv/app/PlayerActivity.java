@@ -15,6 +15,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
+import android.content.pm.ActivityInfo;
 import com.fntv.app.api.FnApiManager;
 import com.fntv.app.api.model.*;
 import com.google.android.exoplayer2.*;
@@ -38,7 +39,7 @@ public class PlayerActivity extends AppCompatActivity {
     private TextView tvTitle, tvDanmuStatus, tvDanmuMatch, infoTextAudio, infoTextExtra;
     private Button btnCloudMode, btnBrightness;
     private DanmuView danmuView;
-    private View controller, controllerOverlay, infoPanel, topBar;
+    private View controller, infoPanel, topBar;
     private boolean isLocked = false, danmuOn = false;
     private List<DanmuView.DanmuComment> danmuItems;
     private String danmuUrl = "";
@@ -146,25 +147,6 @@ public class PlayerActivity extends AppCompatActivity {
         }
         topBar = findViewById(R.id.topBar);
         controller = findViewById(R.id.controller);
-        controllerOverlay = findViewById(R.id.controllerOverlay);
-        if (controllerOverlay != null) {
-            android.view.Display display = getWindowManager().getDefaultDisplay();
-            android.graphics.Point size = new android.graphics.Point();
-            display.getSize(size);
-            final int screenW = size.x;
-            ViewGroup.LayoutParams lp = controllerOverlay.getLayoutParams();
-            lp.width = (int)(screenW * 0.75f);
-            controllerOverlay.setLayoutParams(lp);
-            // 控制器布局变化时同步遮罩高度
-            controller.getViewTreeObserver().addOnGlobalLayoutListener(
-                new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
-                    @Override public void onGlobalLayout() {
-                        if (controller.getHeight() > 0) {
-                            controllerOverlay.getLayoutParams().height = controller.getHeight();
-                        }
-                    }
-                });
-        }
         infoPanel = findViewById(R.id.infoPanel);
         infoText = findViewById(R.id.infoText);
         infoTextAudio = findViewById(R.id.infoTextAudio);
@@ -225,9 +207,10 @@ public class PlayerActivity extends AppCompatActivity {
         if (btnBrightness != null) {
             btnBrightness.setOnClickListener(v -> showBrightnessDialog());
         }
-        // 应用保存的亮度
+        // 应用保存的亮度和 HDR 设置
         int savedBright = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getInt("video_brightness", 100);
         if (savedBright != 100) applyBrightness(savedBright);
+        applyHdrMode();
         btnEpisodeList.setOnClickListener(v -> showEpisodePicker());
         btnNextEp.setOnClickListener(v -> playNextEp());
         setupCloudModeToggle();
@@ -669,41 +652,66 @@ public class PlayerActivity extends AppCompatActivity {
     private void checkHdr() {
         handler.postDelayed(() -> {
             if (player == null) return;
-            boolean isHdr = false;
-            // 1) 从 ExoPlayer 的 ColorInfo 检测
-            Format vf = player.getVideoFormat();
-            if (vf != null && vf.colorInfo != null) {
-                int cs = vf.colorInfo.colorSpace;
-                int ct = vf.colorInfo.colorTransfer;
-                isHdr = cs >= 6 || ct == 7 || ct == 16 || ct == 18;
-                Log.d(TAG, "HDR检查: cs=" + cs + " ct=" + ct + " isHdr=" + isHdr);
-            }
-            // 2) 从流 API 数据检测（ExoPlayer 可能不提取 colorInfo）
-            if (!isHdr) {
-                isHdr = streamVHdr || (!streamVColor.isEmpty() && (streamVColor.contains("bt2020") || streamVColor.contains("2020")));
-                Log.d(TAG, "HDR检查(流API): isHdr=" + isHdr + " streamVHdr=" + streamVHdr + " color=" + streamVColor);
-            }
-            if (isHdr && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                getWindow().setColorMode(1);
-                showDanmuStatus("HDR 模式已激活");
+            boolean isHdr = isHdrVideo();
+            Log.d(TAG, "HDR检查: isHdr=" + isHdr
+                    + " streamVHdr=" + streamVHdr
+                    + " color=" + streamVColor);
+
+            if (isHdr && deviceSupportsHdr()) {
+                boolean userEnabled = getSharedPreferences("fntv_prefs", MODE_PRIVATE)
+                        .getBoolean("hdr_enabled", true);
+                if (userEnabled) {
+                    // 尽早设置，减少闪屏
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        getWindow().setColorMode(ActivityInfo.COLOR_MODE_HDR);
+                    }
+                    showDanmuStatus("HDR 模式已激活");
+                    Log.d(TAG, "HDR 模式已激活");
+                } else {
+                    Log.d(TAG, "用户关闭了 HDR");
+                }
+            } else if (isHdr && !deviceSupportsHdr()) {
+                Log.d(TAG, "设备不支持 HDR，跳过");
+                // 可选：提示用户
+                // showDanmuStatus("设备不支持 HDR 显示");
             }
         }, 1500);
     }
 
+    private boolean deviceSupportsHdr() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            Display.HdrCapabilities caps = getWindowManager()
+                    .getDefaultDisplay().getHdrCapabilities();
+            if (caps != null) {
+                for (int type : caps.getSupportedHdrTypes()) {
+                    if (type == Display.HdrCapabilities.HDR_TYPE_HDR10
+                            || type == Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+
     private void showBrightnessDialog() {
         SharedPreferences p = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
         int brightness = p.getInt("video_brightness", 100);
+        boolean hdrOn = p.getBoolean("hdr_enabled", true);
         final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar);
         dialog.setContentView(R.layout.dialog_brightness);
         dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xDD1A1A1A));
 
         final TextView label = dialog.findViewById(R.id.dm_label);
         final SeekBar sb = dialog.findViewById(R.id.dm_seekbar);
+        final Switch hdrSw = dialog.findViewById(R.id.dm_hdr_switch);
         final Button cancel = dialog.findViewById(R.id.dm_cancel);
         final Button ok = dialog.findViewById(R.id.dm_ok);
         final Button reset = dialog.findViewById(R.id.dm_reset);
 
         if (label != null) label.setText("亮度: " + (brightness - 100) + "%");
+        if (hdrSw != null) hdrSw.setChecked(hdrOn);
         if (sb != null) {
             sb.setMax(200);
             sb.setProgress(brightness);
@@ -722,9 +730,34 @@ public class PlayerActivity extends AppCompatActivity {
         if (cancel != null) cancel.setOnClickListener(v -> dialog.dismiss());
         if (ok != null) ok.setOnClickListener(v -> {
             if (sb != null) p.edit().putInt("video_brightness", sb.getProgress()).apply();
+            if (hdrSw != null) {
+                p.edit().putBoolean("hdr_enabled", hdrSw.isChecked()).apply();
+                applyHdrMode(); // 立即生效
+            }
             dialog.dismiss();
         });
         dialog.show();
+    }
+
+    private void applyHdrMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return;
+        boolean enabled = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getBoolean("hdr_enabled", true);
+        if (enabled && isHdrVideo()) {
+            getWindow().setColorMode(1);
+            Log.d(TAG, "HDR 已开启");
+        } else {
+            getWindow().setColorMode(0); // 恢复默认
+        }
+    }
+
+    private boolean isHdrVideo() {
+        Format vf = player != null ? player.getVideoFormat() : null;
+        if (vf != null && vf.colorInfo != null) {
+            int cs = vf.colorInfo.colorSpace;
+            int ct = vf.colorInfo.colorTransfer;
+            if (cs >= 6 || ct == 7 || ct == 16 || ct == 18) return true;
+        }
+        return streamVHdr || (!streamVColor.isEmpty() && (streamVColor.contains("bt2020") || streamVColor.contains("2020")));
     }
 
     /** 调节屏幕亮度（仅当前 Activity） */
@@ -768,9 +801,6 @@ public class PlayerActivity extends AppCompatActivity {
         }
         ctrlVis = show;
         controller.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
-        if (controllerOverlay != null) {
-            controllerOverlay.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
-        }
         topBar.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
         btnLock.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
         btnDanmu.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
