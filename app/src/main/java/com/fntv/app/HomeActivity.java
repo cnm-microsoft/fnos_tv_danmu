@@ -230,16 +230,6 @@ public class HomeActivity extends AppCompatActivity {
             moviesContainer.addView(makeSpacer(16));
         }
 
-        // 有了 firstViewAllId 后，给继续观看卡片设置 nextFocusDown
-        if (firstViewAllId > 0) {
-            for (int wi = 0; wi < moviesContainer.getChildCount(); wi++) {
-                View wv = moviesContainer.getChildAt(wi);
-                if (wv instanceof ViewGroup) {
-                    applyFocusDown((ViewGroup) wv, firstViewAllId);
-                }
-            }
-        }
-
         if (moviesContainer.getChildCount() == 0) {
             TextView e = new TextView(this);
             e.setLayoutParams(new LinearLayout.LayoutParams(
@@ -459,19 +449,6 @@ public class HomeActivity extends AppCompatActivity {
         return card;
     }
 
-    /** 遍历容器，给所有可聚焦卡片设置 nextFocusDown */
-    private void applyFocusDown(ViewGroup group, int targetId) {
-        for (int i = 0; i < group.getChildCount(); i++) {
-            View v = group.getChildAt(i);
-            if (v.isFocusable()) {
-                v.setNextFocusDownId(targetId);
-            }
-            if (v instanceof ViewGroup) {
-                applyFocusDown((ViewGroup) v, targetId);
-            }
-        }
-    }
-
     // ==================== 横向滚动卡片 ====================
 
     private void populateGrid(LinearLayout cont, List<PlayListItem> items) {
@@ -507,9 +484,10 @@ public class HomeActivity extends AppCompatActivity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(220, 380);
             lp.setMargins(10, 0, 10, 0);
             card.setLayoutParams(lp);
-            // 所有卡片：按↑强制回到"查看全部"按钮
+            // 所有卡片：按↑↓强制回到"查看全部"按钮
             if (focusUpTarget != null) {
                 card.setNextFocusUpId(focusUpTarget.getId());
+                card.setNextFocusDownId(focusUpTarget.getId());
             }
             row.addView(card);
         }
