@@ -5,6 +5,9 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Choreographer;
 import android.view.View;
 import java.util.ArrayList;
@@ -32,9 +35,12 @@ public class DanmuView extends View {
     private boolean showScroll = true;
     private boolean showTop = true;
     private boolean showBottom = true;
-
     private final List<DanmuItem> activeScroll = new ArrayList<>();
     private final List<DanmuItem> activeStatic = new ArrayList<>();
+
+    // 帧调度双模式兜底
+    private final Handler frameHandler = new Handler(Looper.getMainLooper());
+    private boolean useHandlerFallback = false;
 
     public DanmuView(Context c) { this(c, null); }
     public DanmuView(Context c, android.util.AttributeSet a) { this(c, a, 0); }
@@ -87,18 +93,25 @@ public class DanmuView extends View {
     public void start() {
         if (running) return;
         running = true;
+        useHandlerFallback = false;
         lastFrame = System.nanoTime();
         Choreographer.getInstance().postFrameCallback(frameCallback);
+        frameHandler.postDelayed(refreshCheck, 2000);
     }
 
     public void stop() {
         running = false;
+        useHandlerFallback = false;
         Choreographer.getInstance().removeFrameCallback(frameCallback);
+        frameHandler.removeCallbacks(handlerFrame);
+        frameHandler.removeCallbacks(refreshCheck);
     }
 
     public void pause() {
         running = false;
         Choreographer.getInstance().removeFrameCallback(frameCallback);
+        frameHandler.removeCallbacks(handlerFrame);
+        frameHandler.removeCallbacks(refreshCheck);
     }
 
     public void seekToTime(long ms) {
@@ -117,8 +130,10 @@ public class DanmuView extends View {
     public void resume() {
         if (items.isEmpty()) return;
         running = true;
+        useHandlerFallback = false;
         lastFrame = System.nanoTime();
         Choreographer.getInstance().postFrameCallback(frameCallback);
+        frameHandler.postDelayed(refreshCheck, 2000);
     }
 
     public void clear() {
@@ -148,110 +163,155 @@ public class DanmuView extends View {
 
     private int eIdx = 0;
 
+    // ── Choreographer 模式（正常刷新率 ≥ 48Hz）──
     private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
         @Override
         public void doFrame(long frameTimeNanos) {
-            if (!running) return;
-
-            long now = System.nanoTime();
-            float dt = (now - lastFrame) / 1_000_000_000f;
-            lastFrame = now;
-            if (dt > 0.1f) dt = 0.016f;
-
-            int w = getWidth(), h = getHeight();
-            if (w <= 0 || h <= 0) {
-                Choreographer.getInstance().postFrameCallback(this);
-                return;
-            }
-
-            float areaH = h * areaPct / 100f;
-            float lnH = fontSize * screenDensity * rowSpacing;
-            int maxRow = Math.max(1, (int) (areaH / lnH));
-            int maxRowBottom = Math.max(1, Math.min(3, (int) (h / lnH)));
-
-            // ── 发射 ──
-            while (eIdx < items.size()) {
-                DanmuItem src = items.get(eIdx);
-                float diff = playTime - src.time;
-
-                if (diff > 0.5f) { eIdx++; continue; }
-                if (diff < 0) break;
-                if (diff < Math.random() * 0.3f) break;
-                if (Math.random() * 100 >= densityPct) { eIdx++; continue; }
-                if (activeScroll.size() + activeStatic.size() >= maxActive) break;
-
-                // 按类型开关过滤
-                if (src.type == 1 && !showScroll) { eIdx++; continue; }
-                if (src.type == 5 && !showTop) { eIdx++; continue; }
-                if (src.type == 4 && !showBottom) { eIdx++; continue; }
-
-                boolean isStatic = (src.type == 4 || src.type == 5);
-
-                if (isStatic) {
-                    DanmuItem a = new DanmuItem();
-                    a.text = src.text;
-                    a.color = src.color;
-                    a.type = src.type;
-                    a.tw = paint.measureText(src.text);
-                    a.speed = 0;
-                    a.ttl = 5.0f;
-
-                    boolean isTop = (src.type == 5);
-                    float rowY;
-
-                    if (isTop) {
-                        rowY = findStaticRowTop(lnH, maxRow);
-                    } else {
-                        rowY = findStaticRowBottom(h, lnH, maxRowBottom);
-                    }
-
-                    if (rowY < 0) { eIdx++; continue; }
-
-                    a.y = rowY;
-                    a.x = w / 2f - a.tw / 2f;
-                    activeStatic.add(a);
-                    eIdx++;
-                } else {
-                    DanmuItem a = new DanmuItem();
-                    a.text = src.text;
-                    a.color = src.color;
-                    a.type = src.type;
-                    a.tw = paint.measureText(src.text);
-
-                    int len = Math.max(1, src.text.length());
-                    float baseSpeed = 250 + len * 5;
-                    a.speed = baseSpeed * speedMul;
-
-                    float rowY = findScrollRow(a.tw, w, lnH, maxRow);
-                    if (rowY < 0) { eIdx++; continue; }
-
-                    a.y = rowY;
-                    a.x = w + 5;
-                    activeScroll.add(a);
-                    eIdx++;
-                }
-            }
-
-            // ── 更新滚动弹幕位置 ──
-            List<DanmuItem> deadScroll = new ArrayList<>();
-            for (DanmuItem a : activeScroll) {
-                a.x -= a.speed * dt;
-                if (a.x + a.tw < -100) deadScroll.add(a);
-            }
-            activeScroll.removeAll(deadScroll);
-
-            // ── 更新固定弹幕 TTL ──
-            List<DanmuItem> deadStatic = new ArrayList<>();
-            for (DanmuItem a : activeStatic) {
-                a.ttl -= dt;
-                if (a.ttl <= 0) deadStatic.add(a);
-            }
-            activeStatic.removeAll(deadStatic);
-
-            invalidate();
+            if (!running || useHandlerFallback) return;
+            tick();
             Choreographer.getInstance().postFrameCallback(this);
         }
     };
+
+    // ── Handler 兜底模式（刷新率 < 48Hz 时自动切到这个）──
+    private final Runnable handlerFrame = new Runnable() {
+        @Override
+        public void run() {
+            if (!running || !useHandlerFallback) return;
+            tick();
+            frameHandler.postDelayed(this, 1000 / 60);  // 固定 60fps
+        }
+    };
+
+    // ── 每 2 秒检测一次屏幕刷新率，决定用哪种模式 ──
+    private final Runnable refreshCheck = new Runnable() {
+        @Override
+        public void run() {
+            if (!running) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                try {
+                    float rate = getDisplay().getRefreshRate();
+                    if (rate < 48f && !useHandlerFallback) {
+                        // 屏幕降频了，切到 Handler 模式以 60fps 跑弹幕
+                        useHandlerFallback = true;
+                        Choreographer.getInstance().removeFrameCallback(frameCallback);
+                        lastFrame = System.nanoTime();
+                        frameHandler.post(handlerFrame);
+                    } else if (rate >= 48f && useHandlerFallback) {
+                        // 刷新率恢复，切回 Choreographer
+                        useHandlerFallback = false;
+                        frameHandler.removeCallbacks(handlerFrame);
+                        lastFrame = System.nanoTime();
+                        Choreographer.getInstance().postFrameCallback(frameCallback);
+                    }
+                } catch (Exception ignored) {}
+            }
+            frameHandler.postDelayed(this, 2000);
+        }
+    };
+
+    // ── 每帧逻辑（Choreographer 和 Handler 都调这个）──
+    private void tick() {
+        long now = System.nanoTime();
+        float dt = (now - lastFrame) / 1_000_000_000f;
+        lastFrame = now;
+        if (dt > 0.1f) dt = 0.016f;
+
+        int w = getWidth(), h = getHeight();
+        if (w <= 0 || h <= 0) return;
+
+        float areaH = h * areaPct / 100f;
+        float lnH = fontSize * screenDensity * rowSpacing;
+        int maxRow = Math.max(1, (int) (areaH / lnH));
+        int maxRowBottom = Math.max(1, Math.min(3, (int) (h / lnH)));
+
+        // ── 发射 ──
+        while (eIdx < items.size()) {
+            DanmuItem src = items.get(eIdx);
+            float diff = playTime - src.time;
+
+            if (diff > 0.5f) { eIdx++; continue; }
+            if (diff < 0) break;
+            // 发射错开
+            if (diff < Math.random() * 0.3f) break;
+            if (Math.random() * 100 >= densityPct) { eIdx++; continue; }
+            if (activeScroll.size() + activeStatic.size() >= maxActive) break;
+
+            // 按类型开关过滤
+            if (src.type == 1 && !showScroll) { eIdx++; continue; }
+            if (src.type == 5 && !showTop) { eIdx++; continue; }
+            if (src.type == 4 && !showBottom) { eIdx++; continue; }
+
+            boolean isStatic = (src.type == 4 || src.type == 5);
+
+            if (isStatic) {
+                // ── 固定弹幕（顶部/底部）──
+                DanmuItem a = new DanmuItem();
+                a.text = src.text;
+                a.color = src.color;
+                a.type = src.type;
+                a.tw = paint.measureText(src.text);
+                a.speed = 0;
+                a.ttl = 5.0f;  // 显示 5 秒
+
+                boolean isTop = (src.type == 5);
+                float rowY;
+
+                if (isTop) {
+                    // 顶部弹幕：从上往下找，受显示区域限制
+                    rowY = findStaticRowTop(lnH, maxRow);
+                } else {
+                    // 底部弹幕：从屏幕底部往上找，最多3行，不受显示区域限制
+                    rowY = findStaticRowBottom(h, lnH, maxRowBottom);
+                }
+
+                if (rowY < 0) { eIdx++; continue; }  // 没位置，丢弃
+
+                a.y = rowY;
+                a.x = w / 2f - a.tw / 2f;  // 水平居中
+                activeStatic.add(a);
+                eIdx++;
+            } else {
+                // ── 滚动弹幕 ──
+                DanmuItem a = new DanmuItem();
+                a.text = src.text;
+                a.color = src.color;
+                a.type = src.type;
+                a.tw = paint.measureText(src.text);
+
+                // 速度基本匀速，长度影响很小
+                int len = Math.max(1, src.text.length());
+                float baseSpeed = 250 + len * 5;
+                a.speed = baseSpeed * speedMul;
+
+                float rowY = findScrollRow(a.tw, w, lnH, maxRow);
+                if (rowY < 0) { eIdx++; continue; }
+
+                a.y = rowY;
+                a.x = w + 5;
+                activeScroll.add(a);
+                eIdx++;
+            }
+        }
+
+        // ── 更新滚动弹幕位置 ──
+        List<DanmuItem> deadScroll = new ArrayList<>();
+        for (DanmuItem a : activeScroll) {
+            a.x -= a.speed * dt;
+            if (a.x + a.tw < -100) deadScroll.add(a);
+        }
+        activeScroll.removeAll(deadScroll);
+
+        // ── 更新固定弹幕 TTL ──
+        List<DanmuItem> deadStatic = new ArrayList<>();
+        for (DanmuItem a : activeStatic) {
+            a.ttl -= dt;
+            if (a.ttl <= 0) deadStatic.add(a);
+        }
+        activeStatic.removeAll(deadStatic);
+
+        invalidate();
+    }
 
     /**
      * 滚动弹幕行避让：随机间隔（20dp ~ 60dp）

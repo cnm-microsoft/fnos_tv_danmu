@@ -10,6 +10,9 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Display;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
 import com.fntv.app.api.FnApiManager;
@@ -197,6 +200,26 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void initPlayer() {
+        // 强制最高刷新率（Android 11+）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Window win = getWindow();
+            if (win != null) {
+                WindowManager.LayoutParams lp = win.getAttributes();
+                Display.Mode[] modes = getWindowManager().getDefaultDisplay().getSupportedModes();
+                float maxRefresh = 60f;
+                for (Display.Mode m : modes) {
+                    if (m.getRefreshRate() > maxRefresh) maxRefresh = m.getRefreshRate();
+                }
+                lp.preferredDisplayModeId = 0;
+                for (Display.Mode m : modes) {
+                    if (m.getRefreshRate() == maxRefresh) {
+                        lp.preferredDisplayModeId = m.getModeId();
+                        break;
+                    }
+                }
+                win.setAttributes(lp);
+            }
+        }
         DefaultRenderersFactory rf = new DefaultRenderersFactory(this);
         if ("software".equals(getSharedPreferences("fntv_prefs", MODE_PRIVATE).getString("decoder_mode", "hardware"))) {
             rf.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER);
@@ -265,6 +288,10 @@ public class PlayerActivity extends AppCompatActivity {
                     PlayInfoResponse info = r.body().data;
                     mediaGuid = info.mediaGuid; videoGuid = info.videoGuid; audioGuid = info.audioGuid;
                     if (info.parentGuid != null && !info.parentGuid.isEmpty()) parentGuid = info.parentGuid;
+                    // 从 intent 的 parent_guid 兜底（详情页传递的）
+                    if (parentGuid == null || parentGuid.isEmpty()) {
+                        parentGuid = getIntent().getStringExtra("parent_guid");
+                    }
                     subtitleGuid = info.subtitleGuid != null ? info.subtitleGuid : "_no_display_";
                     if (info.item != null && info.item.tvTitle != null) itemTV = info.item.tvTitle;
                     if (info.item != null) itemTitle = info.item.title;
@@ -372,17 +399,30 @@ public class PlayerActivity extends AppCompatActivity {
 
     private void loadEpisodeList() {
         loadingEpisodes = true;
+        Log.d(TAG, "getEpisodeList 请求: " + baseUrl + "/v/api/v1/episode/list/" + parentGuid);
         apiManager.getApi().getEpisodeList(parentGuid).enqueue(
                 new retrofit2.Callback<ApiResponse<List<PlayListItem>>>() {
                     @Override public void onResponse(retrofit2.Call<ApiResponse<List<PlayListItem>>> call,
                                                      retrofit2.Response<ApiResponse<List<PlayListItem>>> resp) {
                         loadingEpisodes = false;
+                        Log.d(TAG, "getEpisodeList 响应 code=" + resp.code()
+                                + " body=" + (resp.body() != null ? "code=" + resp.body().code + " size="
+                                        + (resp.body().data != null ? resp.body().data.size() : "null") : "null"));
                         if (resp.isSuccessful() && resp.body() != null && resp.body().code == 0
                                 && resp.body().data != null && !resp.body().data.isEmpty()) {
                             episodeList = resp.body().data;
+                            currentEpIndex = -1;
+                            int epNum = getIntent().getIntExtra("episode_number", 0);
                             for (int i = 0; i < episodeList.size(); i++) {
-                                if (episodeList.get(i).guid.equals(itemGuid)) { currentEpIndex = i; break; }
+                                PlayListItem ep = episodeList.get(i);
+                                if (ep.guid.equals(itemGuid)) { currentEpIndex = i; break; }
+                                // GUID 不匹配时按集数找
+                                if (currentEpIndex < 0 && epNum > 0 && ep.episodeNumber == epNum) {
+                                    currentEpIndex = i;
+                                }
                             }
+                            Log.d(TAG, "getEpisodeList 成功: " + episodeList.size() + " 集, currentIdx=" + currentEpIndex
+                                    + " epNum=" + epNum + " itemGuid=" + itemGuid);
                             btnEpisodeList.setVisibility(View.VISIBLE);
                             if (currentEpIndex >= 0 && currentEpIndex < episodeList.size() - 1)
                                 btnNextEp.setVisibility(View.VISIBLE);
@@ -390,6 +430,7 @@ public class PlayerActivity extends AppCompatActivity {
                     }
                     @Override public void onFailure(retrofit2.Call<ApiResponse<List<PlayListItem>>> call, Throwable t) {
                         loadingEpisodes = false;
+                        Log.e(TAG, "getEpisodeList 失败: " + t.getMessage());
                     }
                 });
     }
