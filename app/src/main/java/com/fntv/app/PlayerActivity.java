@@ -69,6 +69,9 @@ public class PlayerActivity extends AppCompatActivity {
 
     private static final int[] RATIO_MODES = {0, 3};
     private static final String[] RATIO_LABELS = {"适应", "拉伸"};
+    private String actualVideoDecoder = "";
+    private String actualAudioDecoder = "";
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -232,6 +235,8 @@ public class PlayerActivity extends AppCompatActivity {
         DefaultRenderersFactory rf = new DefaultRenderersFactory(this);
         if ("software".equals(getSharedPreferences("fntv_prefs", MODE_PRIVATE).getString("decoder_mode", "hardware"))) {
             rf.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER);
+        }else {
+            rf.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON);
         }
         player = new SimpleExoPlayer.Builder(this, rf)
                 .setTrackSelector(new DefaultTrackSelector(this)).build();
@@ -253,6 +258,22 @@ public class PlayerActivity extends AppCompatActivity {
             playerView.getSubtitleView().setStyle(captionStyle);
         }
 
+        player.addAnalyticsListener(new com.google.android.exoplayer2.analytics.AnalyticsListener() {
+            @Override
+            public void onVideoDecoderInitialized(EventTime eventTime, String decoderName,
+                                                  long initializedTimestampMs) {
+                actualVideoDecoder = decoderName;
+                Log.d(TAG, "视频解码器: " + decoderName);
+            }
+
+            @Override
+            public void onAudioDecoderInitialized(EventTime eventTime, String decoderName,
+                                                  long initializedTimestampMs) {
+                actualAudioDecoder = decoderName;
+                Log.d(TAG, "音频解码器: " + decoderName);
+            }
+        });
+
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int s) {
                 tvBuffering.setVisibility(s == Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
@@ -261,6 +282,16 @@ public class PlayerActivity extends AppCompatActivity {
                     startSave(); updateTime(); showCtrl(true);
                     btnPlayPause.setText(player.isPlaying() ? "暂停" : "播放");
                     if (danmuOn && danmuView != null) danmuView.resume();
+                    // 打印音轨信息
+                    com.google.android.exoplayer2.Format af2 = player.getAudioFormat();
+                    if (af2 != null) {
+                        Log.d(TAG, "音轨: codec=" + af2.codecs + " mime=" + af2.sampleMimeType
+                                + " 采样率=" + af2.sampleRate + "Hz"
+                                + " 声道=" + af2.channelCount
+                                + " 码率=" + af2.bitrate);
+                    } else {
+                        Log.d(TAG, "音轨: 无音频信息");
+                    }
                 } else if (s == Player.STATE_ENDED) {
                     Log.d(TAG, "STATE_ENDED epList=" + (episodeList != null ? episodeList.size() : "null")
                             + " idx=" + currentEpIndex);
@@ -369,7 +400,7 @@ public class PlayerActivity extends AppCompatActivity {
                                 }
                                 if (qualityIndex >= qualityCount) qualityIndex = 0;
                                 runOnUiThread(() -> {
-                                    btnCloudMode.setVisibility(View.VISIBLE);
+                                    setCloudBtnVisible(true);
                                     updateCloudBtnText();
                                 });
                             }
@@ -571,6 +602,13 @@ public class PlayerActivity extends AppCompatActivity {
         showCtrl(false);
     };
 
+    private void setCloudBtnVisible(boolean vis) {
+        btnCloudMode.setVisibility(vis ? View.VISIBLE : View.GONE);
+        if (tvDanmuMatch != null) {
+            tvDanmuMatch.setPaddingRelative(0, 0, vis ? 140 : 20, 0);
+        }
+    }
+
     private void updateCloudBtnText() {
         String mode = cloudDirectMode ? "直链" : "代理";
         String ql = (cloudDirectMode && qualityCount > 0 && qualityIndex < qualityCount && qualityLabels != null) ? qualityLabels[qualityIndex] : "";
@@ -683,7 +721,11 @@ public class PlayerActivity extends AppCompatActivity {
             s.append("  ").append(af.sampleRate > 0 ? af.sampleRate/1000 + "kHz" : "?");
             s.append("  ").append(af.bitrate > 0 ? af.bitrate/1000 + "kbps" : "?");
         }
-        s.append("\n解码 ").append(isHwDecode ? "硬解" : "软解");
+        // 视频解码器
+        s.append("\n视频解码 ").append(formatDecoder(actualVideoDecoder));
+        // 音频解码器
+        s.append("\n音频解码 ").append(formatDecoder(actualAudioDecoder));
+
         infoText.setText(s.toString());
     }
 
@@ -692,6 +734,15 @@ public class PlayerActivity extends AppCompatActivity {
         if (bps >= 1000000) return String.format("%.2f Mbps", bps / 1000000f);
         if (bps >= 1000) return String.format("%.0f Kbps", bps / 1000f);
         return bps + " bps";
+    }
+
+    private String formatDecoder(String decoderName) {
+        if (decoderName == null || decoderName.isEmpty()) return "等待中...";
+        if (decoderName.startsWith("ffmpeg")) return "FFmpeg软解 (" + decoderName + ")";
+        if (decoderName.startsWith("OMX.google") || decoderName.startsWith("c2.android"))
+            return "系统软解 (" + decoderName + ")";
+        // 其他一律视为硬件解码器
+        return "硬解 (" + decoderName + ")";
     }
 
     // ========== 弹幕 ==========
