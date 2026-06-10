@@ -8,8 +8,8 @@ import java.util.Random;
  * 飞牛影视 API 签名工具类
  */
 public class FnAuthUtils {
-    private static final String API_KEY = "vD2P9mXkL3Qr5YtUwEa6FbHcJdN1zR0Wg";
-    private static final String API_SECRET = "CA8CEF1E-5B91-4F82-9DB7-E8D6A9B1C2D4";
+    private static final String API_KEY = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh";
+    private static final String API_SECRET = "16CCEB3D-AB42-077D-36A1-F355324E4237";
 
     public static String getMd5(String input) {
         try {
@@ -38,7 +38,7 @@ public class FnAuthUtils {
     public static String genAuthx(String url, String jsonBody) {
         String nonce = generateNonce();
         String timestamp = String.valueOf(System.currentTimeMillis());
-        String dataMd5 = jsonBody != null ? getMd5(jsonBody) : "";
+        String dataMd5 = jsonBody != null ? getMd5(jsonBody) : getMd5("");
 
         String signStr = API_KEY + "_" + url + "_" + nonce + "_" + timestamp + "_" + dataMd5 + "_" + API_SECRET;
 

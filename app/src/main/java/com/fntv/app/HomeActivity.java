@@ -170,7 +170,11 @@ public class HomeActivity extends AppCompatActivity {
             @Override
             public void onResponse(Call<ApiResponse<List<MediaDbItem>>> call,
                                    Response<ApiResponse<List<MediaDbItem>>> response) {
-                Log.d("Overview", "getMediaDbList response code=" + response.code() + " t=" + (System.currentTimeMillis() - t0) + "ms");
+                String bodyStr = response.body() != null ? "code=" + response.body().code + " msg=" + response.body().msg + " data=" + (response.body().data != null ? response.body().data.size() + "条" : "null") : "nullBody";
+                Log.d("Overview", "getMediaDbList resp code=" + response.code() + " " + bodyStr + " t=" + (System.currentTimeMillis() - t0) + "ms");
+                if (response.body() != null && response.body().code != 0) {
+                    try { Log.w("Overview", "错误响应: " + new com.google.gson.Gson().toJson(response.body())); } catch (Exception ignored) {}
+                }
                 if (response.isSuccessful() && response.body() != null && response.body().code == 0
                         && response.body().data != null && !response.body().data.isEmpty()) {
                     mediaLibraries.clear();
@@ -1665,25 +1669,73 @@ public class HomeActivity extends AppCompatActivity {
                 Log.w("Update", "ACTION_VIEW 不可用");
             }
 
-            // 方式3: 都没找到安装器，提示用户手动安装
+            // 方式3: 都没找到安装器 → 复制到下载目录
             final java.io.File apk = apkFile;
-            runOnUiThread(() -> {
-                new android.app.AlertDialog.Builder(this)
-                        .setTitle("安装失败")
-                        .setMessage("系统未找到安装器，请手动安装 APK 文件：\n" + apk.getAbsolutePath())
-                        .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
-                        .show();
-            });
+            try {
+                java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(
+                        android.os.Environment.DIRECTORY_DOWNLOADS);
+                if (!downloadDir.exists()) downloadDir.mkdirs();
+                java.io.File targetFile = new java.io.File(downloadDir, "FNTV_update_" + apk.getName());
+                java.io.FileInputStream fis = new java.io.FileInputStream(apk);
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(targetFile);
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = fis.read(buf)) != -1) fos.write(buf, 0, n);
+                fis.close();
+                fos.close();
+                final String msg = "安装器不可用，APK 已复制到：\n" + targetFile.getAbsolutePath();
+                Log.w("Update", msg);
+                runOnUiThread(() -> {
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("安装失败")
+                            .setMessage(msg)
+                            .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
+                            .show();
+                });
+            } catch (Exception copyErr) {
+                Log.e("Update", "复制失败", copyErr);
+                runOnUiThread(() -> {
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("安装失败")
+                            .setMessage("系统未找到安装器，APK 位置：\n" + apk.getAbsolutePath())
+                            .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
+                            .show();
+                });
+            }
         } catch (Exception e) {
             Log.e("Update", "安装失败", e);
             final java.io.File apk = apkFile;
-            runOnUiThread(() -> {
-                new android.app.AlertDialog.Builder(this)
-                        .setTitle("安装失败")
-                        .setMessage("错误：" + e.getMessage() + "\n请手动安装：\n" + apk.getAbsolutePath())
-                        .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
-                        .show();
-            });
+            try {
+                java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(
+                        android.os.Environment.DIRECTORY_DOWNLOADS);
+                if (!downloadDir.exists()) downloadDir.mkdirs();
+                java.io.File targetFile = new java.io.File(downloadDir, "FNTV_update_" + apk.getName());
+                java.io.FileInputStream fis = new java.io.FileInputStream(apk);
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(targetFile);
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = fis.read(buf)) != -1) fos.write(buf, 0, n);
+                fis.close();
+                fos.close();
+                final String msg2 = "安装失败: " + e.getMessage() + "\nAPK 已复制到：\n" + targetFile.getAbsolutePath();
+                Log.w("Update", msg2);
+                runOnUiThread(() -> {
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("安装失败")
+                            .setMessage(msg2)
+                            .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
+                            .show();
+                });
+            } catch (Exception copyErr2) {
+                Log.e("Update", "复制失败", copyErr2);
+                runOnUiThread(() -> {
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("安装失败")
+                            .setMessage("错误：" + e.getMessage())
+                            .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
+                            .show();
+                });
+            }
         }
     }
 

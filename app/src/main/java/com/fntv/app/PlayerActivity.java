@@ -178,11 +178,6 @@ public class PlayerActivity extends AppCompatActivity {
             btnDanmu.setText("弹");
         }
 
-        findViewById(android.R.id.content).setOnClickListener(v -> {
-            if (ctrlVis) togglePlay();
-            else showCtrl(true);
-        });
-
         btnPlayPause.setOnClickListener(v -> togglePlay());
         seekStep = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getInt("seek_step", 10) * 1000;
         btnRewind.setOnClickListener(v -> seekRel(-seekStep));
