@@ -399,6 +399,39 @@
 
         </ScrollView>
 
+        <LinearLayout
+            android:id="@+id/trackBtnRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="6dp">
+
+            <Button android:id="@+id/btnAudioTrack"
+                android:layout_width="wrap_content" android:layout_height="34dp"
+                android:background="@drawable/bg_chip"
+                android:text="音轨"
+                android:textColor="#EEE" android:textSize="12sp"
+                android:focusable="true"
+                android:layout_marginRight="6dp"
+                android:gravity="center"
+                android:paddingLeft="10dp" android:paddingRight="10dp"
+                android:minWidth="0dp" android:minHeight="0dp"
+                android:nextFocusDown="@+id/btnCloseInfo" />
+
+            <Button android:id="@+id/btnSubtitleTrack"
+                android:layout_width="wrap_content" android:layout_height="34dp"
+                android:background="@drawable/bg_chip"
+                android:text="字幕"
+                android:textColor="#EEE" android:textSize="12sp"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingLeft="10dp" android:paddingRight="10dp"
+                android:minWidth="0dp" android:minHeight="0dp"
+                android:nextFocusDown="@+id/btnCloseInfo" />
+
+        </LinearLayout>
+
         <Button
             android:id="@+id/btnCloseInfo"
             android:layout_width="wrap_content"
@@ -409,7 +442,8 @@
             android:text="关闭"
             android:textColor="#FFF"
             android:focusable="true"
-            android:layout_marginTop="8dp" />
+            android:layout_marginTop="8dp"
+            android:nextFocusUp="@+id/btnSubtitleTrack" />
     </LinearLayout>
 
 </FrameLayout>

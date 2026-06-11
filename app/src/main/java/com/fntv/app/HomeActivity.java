@@ -166,6 +166,7 @@ public class HomeActivity extends AppCompatActivity {
         loadingPreviews = false;
         tvMoviesLoading.setVisibility(View.VISIBLE);
 
+        final int[] retryCount = {1};
         apiManager.getApi().getMediaDbList().enqueue(new Callback<ApiResponse<List<MediaDbItem>>>() {
             @Override
             public void onResponse(Call<ApiResponse<List<MediaDbItem>>> call,
@@ -174,6 +175,13 @@ public class HomeActivity extends AppCompatActivity {
                 Log.d("Overview", "getMediaDbList resp code=" + response.code() + " " + bodyStr + " t=" + (System.currentTimeMillis() - t0) + "ms");
                 if (response.body() != null && response.body().code != 0) {
                     try { Log.w("Overview", "错误响应: " + new com.google.gson.Gson().toJson(response.body())); } catch (Exception ignored) {}
+                }
+                // Auth Failed 时重试一次
+                if (response.body() != null && response.body().code == -2 && retryCount[0] > 0) {
+                    retryCount[0]--;
+                    Log.d("Overview", "Auth Failed，重试中...");
+                    call.clone().enqueue(this);
+                    return;
                 }
                 if (response.isSuccessful() && response.body() != null && response.body().code == 0
                         && response.body().data != null && !response.body().data.isEmpty()) {
@@ -1223,11 +1231,19 @@ public class HomeActivity extends AppCompatActivity {
         clearContainer(libraryContainer, tvLibraryLoading, tvLibraryEmpty);
         tvLibraryLoading.setVisibility(View.VISIBLE);
 
+        final int[] retryCount = {1};
         apiManager.getApi().getMediaDbList().enqueue(new Callback<ApiResponse<List<MediaDbItem>>>() {
             @Override
             public void onResponse(Call<ApiResponse<List<MediaDbItem>>> call,
                                    Response<ApiResponse<List<MediaDbItem>>> response) {
                 tvLibraryLoading.setVisibility(View.GONE);
+                // Auth Failed 时重试一次
+                if (response.body() != null && response.body().code == -2 && retryCount[0] > 0) {
+                    retryCount[0]--;
+                    Log.d("Home", "Auth Failed，重试中...");
+                    call.clone().enqueue(this);
+                    return;
+                }
                 if (response.isSuccessful() && response.body() != null && response.body().code == 0
                         && response.body().data != null && !response.body().data.isEmpty()) {
                     mediaLibraries.clear();

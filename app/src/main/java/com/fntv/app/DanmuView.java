@@ -8,6 +8,7 @@ import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.Choreographer;
 import android.view.View;
 import java.util.ArrayList;
@@ -46,7 +47,6 @@ public class DanmuView extends View {
     public DanmuView(Context c, android.util.AttributeSet a) { this(c, a, 0); }
     public DanmuView(Context c, android.util.AttributeSet a, int defStyle) {
         super(c, a, defStyle);
-        setLayerType(View.LAYER_TYPE_HARDWARE, null);
         screenDensity = c.getResources().getDisplayMetrics().density;
         paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         updateStyle();
@@ -54,6 +54,9 @@ public class DanmuView extends View {
 
     public void setMaxActive(int v) { maxActive = v; }
     public void setSpeedMul(float v) { speedMul = v; }
+    private float playbackSpeed = 1f;
+    public void setPlaybackSpeed(float speed) { playbackSpeed = speed; }
+    private float getEffectiveSpeedMul() { return speedMul * Math.max(1f, playbackSpeed); }
     public void setOpacity(float v) { opacity = v; updateStyle(); }
     public void setAreaPct(int v) { areaPct = v; }
     public void setFontSize(float v) { fontSize = v; updateStyle(); }
@@ -70,7 +73,9 @@ public class DanmuView extends View {
         paint.setStyle(Paint.Style.FILL);
     }
 
-    public void setPlayTime(long ms) { playTime = ms / 1000f; }
+    public void setPlayTime(long ms) {
+        playTime = ms / 1000f;
+    }
 
     public void loadDanmu(List<DanmuComment> comments) {
         items.clear();
@@ -230,7 +235,7 @@ public class DanmuView extends View {
             DanmuItem src = items.get(eIdx);
             float diff = playTime - src.time;
 
-            if (diff > 0.5f) { eIdx++; continue; }
+            if (diff > 1.5f) { eIdx++; continue; }
             if (diff < 0) break;
             // 发射错开
             if (diff < Math.random() * 0.3f) break;
@@ -282,7 +287,7 @@ public class DanmuView extends View {
                 // 速度基本匀速，长度影响很小
                 int len = Math.max(1, src.text.length());
                 float baseSpeed = 250 + len * 5;
-                a.speed = baseSpeed * speedMul;
+                a.speed = baseSpeed * getEffectiveSpeedMul();
 
                 float rowY = findScrollRow(a.tw, w, lnH, maxRow);
                 if (rowY < 0) { eIdx++; continue; }
