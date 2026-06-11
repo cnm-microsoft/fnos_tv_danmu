@@ -1,7 +1,7 @@
 {
-    "versionCode": 13,
-    "versionName": "1.1.3",
-    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.1.3/FNTV_release_v1.1.3_20260610_2232.apk",
-    "changelog": "1.修正登录问题 \n2.去掉点击屏幕暂停播放的逻辑 \n3.3.自动升级失败时将安装包转移到下载文件夹\n",
+    "versionCode": 14,
+    "versionName": "1.1.4",
+    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.1.4/FNTV_release_v1.1.4_20260611_1003.apk",
+    "changelog": "1.修复播放器ui不显示的问题\n",
     "forceUpdate": false
   }
