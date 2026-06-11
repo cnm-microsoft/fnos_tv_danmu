@@ -38,7 +38,8 @@ public class PlayerActivity extends AppCompatActivity {
     private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
     private ImageView btnLock;
     private TextView tvTitle, tvDanmuStatus, tvDanmuMatch, tvSpeedHint, infoTextAudio, infoTextExtra;
-    private Button btnCloudMode, btnBrightness;
+    private Button btnCloudMode, btnBrightness, btnSkip;
+    private boolean introSkipped = false, outroSkipped = false;
     private float speedBeforeLongPress = 1.0f;
     private DanmuView danmuView;
     private View controller, infoPanel, topBar;
@@ -247,6 +248,10 @@ public class PlayerActivity extends AppCompatActivity {
         if (btnBrightness != null) {
             btnBrightness.setOnClickListener(v -> showBrightnessDialog());
         }
+        btnSkip = findViewById(R.id.btnSkip);
+        if (btnSkip != null) {
+            btnSkip.setOnClickListener(v -> showIntroOutroDialog());
+        }
         // 应用保存的亮度和 HDR 设置
         int savedBright = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getInt("video_brightness", 100);
         if (savedBright != 100) applyBrightness(savedBright);
@@ -356,6 +361,17 @@ public class PlayerActivity extends AppCompatActivity {
                                 + " 码率=" + af2.bitrate);
                     } else {
                         Log.d(TAG, "音轨: 无音频信息");
+                    }
+                    // 片头跳过（只开始触发一次，片尾在 updateTime 实时监测）
+                    if (!introSkipped && (parentGuid != null || (itemTV != null && !itemTV.isEmpty()))) {
+                        SharedPreferences sp = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
+                        String skipId = parentGuid != null && !parentGuid.isEmpty() ? parentGuid : itemTV;
+                        int introSec = sp.getInt("skip_" + skipId + "_intro", 0);
+                        if (introSec > 0) {
+                            int pos = (int)(player.getCurrentPosition() / 1000);
+                            if (pos < introSec) { player.seekTo(introSec * 1000L); showDanmuStatus("跳过片头 " + introSec + "秒"); }
+                            introSkipped = true;
+                        }
                     }
                 } else if (s == Player.STATE_ENDED) {
                     Log.d(TAG, "STATE_ENDED epList=" + (episodeList != null ? episodeList.size() : "null")
@@ -639,6 +655,7 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void playNextEp() {
+        introSkipped = false; outroSkipped = false;
         if (episodeList == null || currentEpIndex < 0 || currentEpIndex >= episodeList.size() - 1) return;
         PlayListItem next = episodeList.get(currentEpIndex + 1);
         itemGuid = next.guid; currentEpIndex++;
@@ -766,6 +783,70 @@ public class PlayerActivity extends AppCompatActivity {
         return false;
     }
 
+
+    private void showIntroOutroDialog() {
+        SharedPreferences p = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
+        String skipId = parentGuid != null && !parentGuid.isEmpty() ? parentGuid : itemTV;
+        String key = "skip_" + skipId;
+        int defIntro = p.getInt(key + "_intro", 0);
+        int defOutro = p.getInt(key + "_outro", 0);
+
+        final android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar);
+        dialog.setContentView(R.layout.dialog_skip);
+        dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xDD1A1A1A));
+
+        // 标题
+        TextView tvTitle = dialog.findViewById(R.id.tv_skip_title);
+        if (tvTitle != null) tvTitle.setText((itemTV != null ? itemTV : "当前视频") + " - 跳过设置");
+
+        // 片头滑条
+        final TextView introLabel = dialog.findViewById(R.id.dm_label);
+        final SeekBar introSb = dialog.findViewById(R.id.dm_seekbar);
+        // 片尾滑条（第二个 include 的 ID 是 dm_outro，里面的子控件 ID 相同）
+        final TextView outroLabel = ((ViewGroup)dialog.findViewById(R.id.dm_outro)).findViewById(R.id.dm_label);
+        final SeekBar outroSb = ((ViewGroup)dialog.findViewById(R.id.dm_outro)).findViewById(R.id.dm_seekbar);
+
+        if (introLabel != null) introLabel.setText("跳过片头: " + defIntro + "秒");
+        if (outroLabel != null) outroLabel.setText("跳过片尾: " + defOutro + "秒");
+
+        if (introSb != null) {
+            introSb.setMax(600);
+            introSb.setProgress(defIntro);
+            introSb.setKeyProgressIncrement(1);
+            introSb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar sb, int v, boolean u) {
+                    if (introLabel != null) introLabel.setText("跳过片头: " + v + "秒");
+                }
+                @Override public void onStartTrackingTouch(SeekBar s) {}
+                @Override public void onStopTrackingTouch(SeekBar s) {}
+            });
+        }
+        if (outroSb != null) {
+            outroSb.setMax(600);
+            outroSb.setProgress(defOutro);
+            outroSb.setKeyProgressIncrement(1);
+            outroSb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar sb, int v, boolean u) {
+                    if (outroLabel != null) outroLabel.setText("跳过片尾: " + v + "秒");
+                }
+                @Override public void onStartTrackingTouch(SeekBar s) {}
+                @Override public void onStopTrackingTouch(SeekBar s) {}
+            });
+        }
+
+        Button reset = dialog.findViewById(R.id.dm_reset);
+        Button cancel = dialog.findViewById(R.id.dm_cancel);
+        Button ok = dialog.findViewById(R.id.dm_ok);
+
+        if (reset != null) reset.setOnClickListener(v -> { if (introSb != null) introSb.setProgress(0); if (outroSb != null) outroSb.setProgress(0); });
+        if (cancel != null) cancel.setOnClickListener(v -> dialog.dismiss());
+        if (ok != null) ok.setOnClickListener(v -> {
+            if (introSb != null) p.edit().putInt(key + "_intro", introSb.getProgress()).apply();
+            if (outroSb != null) p.edit().putInt(key + "_outro", outroSb.getProgress()).apply();
+            dialog.dismiss();
+        });
+        dialog.show();
+    }
 
     private void switchMediaSource(boolean toHls) {
         if (player == null || cloudDirectUrl.isEmpty()) return;
@@ -907,7 +988,7 @@ public class PlayerActivity extends AppCompatActivity {
         handler.postDelayed(hideC, 5000);
     }
     private final Runnable hideC = () -> {
-        if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || topBar.hasFocus()) {
+        if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || btnSkip.hasFocus() || topBar.hasFocus()) {
             resetHideTimer();
             return;
         }
@@ -1031,6 +1112,7 @@ public class PlayerActivity extends AppCompatActivity {
         btnLock.setOnFocusChangeListener(l);
         btnCloudMode.setOnFocusChangeListener(l);
         if (btnBrightness != null) btnBrightness.setOnFocusChangeListener(l);
+        if (btnSkip != null) btnSkip.setOnFocusChangeListener(l);
     };
 
     private void updateTime() {
@@ -1040,7 +1122,22 @@ public class PlayerActivity extends AppCompatActivity {
         seekBar.setMax((int) Math.max(dur, 1)); seekBar.setProgress((int) cur);
         seekBar.setKeyProgressIncrement(5000); // 方向键每次 5 秒
         if (danmuView != null) danmuView.setPlayTime(cur);
-        handler.postDelayed(timeR, 500);
+        // 实时监测片尾位置
+        if (!outroSkipped && dur > 0) {
+            SharedPreferences sp = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
+            String sid = parentGuid != null && !parentGuid.isEmpty() ? parentGuid : (itemTV != null ? itemTV : null);
+            if (sid != null) {
+                int outroSec = sp.getInt("skip_" + sid + "_outro", 0);
+                if (outroSec > 0) Log.d(TAG, "片尾检测: cur=" + (cur/1000) + "s dur=" + (dur/1000) + "s 阈值=" + (dur/1000 - outroSec) + "s");
+                if (outroSec > 0 && cur / 1000 > dur / 1000 - outroSec) {
+                outroSkipped = true;
+                showDanmuStatus("检测到片尾");
+                if (episodeList != null && currentEpIndex >= 0 && currentEpIndex < episodeList.size() - 1)
+                    handler.postDelayed(() -> playNextEp(), 1000);
+                }
+            }
+        }
+        handler.postDelayed(timeR, 1000);
     }
     private final Runnable timeR = () -> { if (player != null && player.isPlaying()) updateTime(); };
 
@@ -2011,7 +2108,7 @@ public class PlayerActivity extends AppCompatActivity {
             switch (k) {
                 case KeyEvent.KEYCODE_BACK:
                     if (infoVis) { toggleInfo(); return true; }
-                    if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || topBar.hasFocus()) {
+                    if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || btnSkip.hasFocus() || topBar.hasFocus()) {
                         controller.clearFocus();
                         topBar.clearFocus();
                         btnDanmu.clearFocus();
@@ -2030,7 +2127,7 @@ public class PlayerActivity extends AppCompatActivity {
                 case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
                     if (seekBar.hasFocus() || btnRewind.hasFocus() || btnForward.hasFocus()
                             || btnSpeed.hasFocus() || btnRatio.hasFocus() || btnInfo.hasFocus()
-                            || btnEpisodeList.hasFocus() || btnNextEp.hasFocus() || btnBrightness.hasFocus()) {
+                            || btnEpisodeList.hasFocus() || btnNextEp.hasFocus() || btnBrightness.hasFocus() || btnSkip.hasFocus()) {
                         return true;
                     }
                     togglePlay(); return true;
