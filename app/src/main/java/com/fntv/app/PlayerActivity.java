@@ -37,8 +37,9 @@ public class PlayerActivity extends AppCompatActivity {
     private SeekBar seekBar;
     private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
     private ImageView btnLock;
-    private TextView tvTitle, tvDanmuStatus, tvDanmuMatch, infoTextAudio, infoTextExtra;
+    private TextView tvTitle, tvDanmuStatus, tvDanmuMatch, tvSpeedHint, infoTextAudio, infoTextExtra;
     private Button btnCloudMode, btnBrightness;
+    private float speedBeforeLongPress = 1.0f;
     private DanmuView danmuView;
     private View controller, infoPanel, topBar;
     private boolean isLocked = false, danmuOn = false;
@@ -141,6 +142,7 @@ public class PlayerActivity extends AppCompatActivity {
         tvDanmuStatus = findViewById(R.id.tvDanmuStatus);
         btnCloudMode = findViewById(R.id.btnCloudMode);
         tvDanmuMatch = findViewById(R.id.tvDanmuMatch);
+        tvSpeedHint = findViewById(R.id.tvSpeedHint);
         if (tvDanmuMatch != null) {
             try {
                 java.lang.reflect.Field f = android.widget.TextView.class.getDeclaredField("mMarqueeSpeed");
@@ -178,7 +180,46 @@ public class PlayerActivity extends AppCompatActivity {
             btnDanmu.setText("弹");
         }
 
-        findViewById(android.R.id.content).setOnClickListener(v -> showCtrl(true));
+        findViewById(android.R.id.content).setOnTouchListener(new View.OnTouchListener() {
+            private boolean longPressing = false;
+            private android.os.Handler longPressHandler = new android.os.Handler(Looper.getMainLooper());
+            @Override public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (isLocked) return false;
+                switch (event.getAction()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        longPressing = false;
+                        longPressHandler.postDelayed(() -> {
+                            longPressing = true;
+                            if (player != null) {
+                                speedBeforeLongPress = player.getPlaybackParameters().speed;
+                                player.setPlaybackSpeed(2.0f);
+                                showCtrl(false);
+                                if (tvSpeedHint != null) {
+                                    tvSpeedHint.setVisibility(View.VISIBLE);
+                                }
+                            }
+                        }, 500);
+                        return true;
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        longPressHandler.removeCallbacksAndMessages(null);
+                        if (longPressing) {
+                            longPressing = false;
+                            if (player != null) {
+                                player.setPlaybackSpeed(speedBeforeLongPress);
+                            }
+                            if (tvSpeedHint != null) {
+                                tvSpeedHint.setVisibility(View.GONE);
+                            }
+                            return true;
+                        } else {
+                            showCtrl(true);
+                        }
+                        return true;
+                }
+                return false;
+            }
+        });
         btnPlayPause.setOnClickListener(v -> togglePlay());
         seekStep = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getInt("seek_step", 10) * 1000;
         btnRewind.setOnClickListener(v -> seekRel(-seekStep));

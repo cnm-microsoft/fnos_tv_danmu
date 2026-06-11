@@ -117,6 +117,23 @@
         android:maxLines="3"
         android:ellipsize="end" />
 
+    <!-- 长按倍速提示 -->
+    <TextView
+        android:id="@+id/tvSpeedHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_danmu_status_hint"
+        android:paddingLeft="20dp"
+        android:paddingRight="20dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:text="倍速播放中"
+        android:textColor="#FFF"
+        android:textSize="16sp"
+        android:visibility="gone" />
+
     <!-- 弹幕开关（左侧中间） -->
     <Button android:id="@+id/btnDanmu"
         android:layout_width="40dp"
