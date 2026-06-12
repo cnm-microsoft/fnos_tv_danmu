@@ -850,9 +850,6 @@ public class PlayerActivity extends AppCompatActivity {
         btnDanmu.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
         if (show) {
             updateTitle();
-            if (!controller.hasFocus() && !btnDanmu.hasFocus() && !btnLock.hasFocus() && !topBar.hasFocus()) {
-                btnPlayPause.post(() -> btnPlayPause.requestFocus());
-            }
             resetHideTimer();
         }
         else hideSystemUi();

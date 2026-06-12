@@ -36,7 +36,8 @@ public class HomeActivity extends AppCompatActivity {
     private LinearLayout moviesContainer, libraryContainer;
     private TextView tvMoviesLoading, tvLibraryLoading, tvLibraryEmpty;
     private TextView tvSettingUsername, tvSettingServer, tvDecoderValue, tvDanmuUrl;
-    private Button btnLogout, btnCheckUpdate, btnFeedback;
+    private Button btnLogout, btnFeedback;
+    private UpdateManager updateManager;
     private RelativeLayout rlDecoderSetting, rlDanmuSetting, rlSeekStep;
     private TextView tvSeekStepValue;
 
@@ -44,6 +45,7 @@ public class HomeActivity extends AppCompatActivity {
     private final List<MediaDbItem> mediaLibraries = new ArrayList<>();
     private WatchHistoryManager watchHistory;
     private boolean showingOverview = true;
+    private boolean showingEpisodes = false;
     private boolean loadingPreviews = false;
 
     private FnApiManager apiManager;
@@ -53,8 +55,36 @@ public class HomeActivity extends AppCompatActivity {
 
     private long t0;
     private boolean overviewBuilt = false;
+    private long backPressedTime = 0;
+
+    // 横竖屏切换时保存的页面状态
+    private String savedBrowseGuid, savedBrowseTitle;
+    private List<PlayListItem> savedBrowseList;
+    private PlayListItem savedDetailItem;
+    private PlayInfoResponse savedDetailInfo;
+    private boolean browseFromLibrary;
 
     @Override
+
+    public void onConfigurationChanged(android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (savedDetailItem != null) {
+            buildDetailPage(savedDetailItem, savedDetailInfo);
+        } else if (savedBrowseList != null) {
+            if (browseFromLibrary) { renderBrowseGrid(savedBrowseList, savedBrowseTitle); } else { renderGridInContainer(savedBrowseList, savedBrowseTitle, moviesContainer); }
+        } else if (currentTab == 1 && savedBrowseGuid != null) {
+            browseItemsInContainer(savedBrowseGuid, savedBrowseTitle,
+                    libraryContainer, tvLibraryLoading);
+        } else if (currentTab == 0) {
+            loadingPreviews = false;
+            overviewBuilt = false;
+            showOverview();
+            loadAllPreviews();
+        }
+    }
+
+    @Override
+
     protected void onCreate(Bundle savedInstanceState) {
         t0 = System.currentTimeMillis();
         super.onCreate(savedInstanceState);
@@ -84,7 +114,7 @@ public class HomeActivity extends AppCompatActivity {
         setupTabs();
         setupSettings();
         setupLogout();
-        setupUpdateCheck();
+        updateManager.setup();
         setupFeedback();
 
         switchTab(0);
@@ -92,6 +122,7 @@ public class HomeActivity extends AppCompatActivity {
         tvMoviesLoading.setText("正在加载媒体库...");
         loadOverview();
     }
+
 
     private void initViews() {
         tabMovies = findViewById(R.id.tabMovies);
@@ -109,7 +140,8 @@ public class HomeActivity extends AppCompatActivity {
         tvSettingServer = findViewById(R.id.tvSettingServer);
         tvDecoderValue = findViewById(R.id.tvDecoderValue);
         btnLogout = findViewById(R.id.btnLogout);
-        btnCheckUpdate = findViewById(R.id.btnCheckUpdate);
+        Button btnCheckUpdate = findViewById(R.id.btnCheckUpdate);
+        updateManager = new UpdateManager(this, btnCheckUpdate, BuildConfig.VERSION_CODE);
         btnFeedback = findViewById(R.id.btnFeedback);
         rlDecoderSetting = findViewById(R.id.rlDecoderSetting);
         rlDanmuSetting = findViewById(R.id.rlDanmuSetting);
@@ -124,19 +156,24 @@ public class HomeActivity extends AppCompatActivity {
         } catch (Exception ignored) {}
     }
 
+
     // ======================== Tab ========================
 
     @Override
+
     protected void onResume() {
         super.onResume();
-        if (currentTab == 0 && !mediaLibraries.isEmpty() && overviewBuilt) {
+        if (savedDetailItem != null) {
+            buildDetailPage(savedDetailItem, savedDetailInfo);
+        } else if (currentTab == 0 && !mediaLibraries.isEmpty() && overviewBuilt && showingOverview) {
             loadingPreviews = false;
             showOverview();
             loadAllPreviews();
-        } else if (currentTab == 0 && !overviewBuilt) {
+        } else if (currentTab == 0 && !overviewBuilt && showingOverview) {
             loadOverview();
         }
     }
+
 
     private void setupTabs() {
         tabMovies.setOnClickListener(v -> switchTab(0));
@@ -144,8 +181,11 @@ public class HomeActivity extends AppCompatActivity {
         tabSettings.setOnClickListener(v -> switchTab(2));
     }
 
+
     private void switchTab(int index) {
         currentTab = index;
+        // 切换标签时清除保存的页面状态，防止横竖屏切回时错误恢复
+        savedBrowseList = null; savedBrowseGuid = null;
         panelMovies.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
         panelLibrary.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
         panelSettings.setVisibility(index == 2 ? View.VISIBLE : View.GONE);
@@ -157,7 +197,9 @@ public class HomeActivity extends AppCompatActivity {
         else tabSettings.requestFocus();
     }
 
+
     // ==================== 影视概览 ====================
+
 
     private void loadOverview() {
         Log.d("Overview", "loadOverview start  t=" + (System.currentTimeMillis() - t0) + "ms");
@@ -203,8 +245,11 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     /** 构建概览 */
+
     private void showOverview() {
         tvMoviesLoading.setVisibility(View.GONE);
+        savedDetailItem = null; savedDetailInfo = null; savedBrowseList = null; savedBrowseGuid = null;
+        showingEpisodes = false;
         moviesContainer.removeAllViews();
         showingOverview = true;
         overviewBuilt = true;
@@ -267,6 +312,7 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     /** 加载各媒体库预览 */
+
     private void loadAllPreviews() {
         if (loadingPreviews) return;
         loadingPreviews = true;
@@ -291,6 +337,7 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     /** 填充预览卡片（先清空再填充，防止重复） */
+
     private void fillPreview(String libGuid, List<PlayListItem> items) {
         for (int i = 0; i < moviesContainer.getChildCount(); i++) {
             View v = moviesContainer.getChildAt(i);
@@ -304,6 +351,7 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     /** 构建媒体库标题行（整行可聚焦，点击 = 查看全部） */
+
     private LinearLayout makeLibHeader(String libGuid, String libTitle, int count) {
         LinearLayout headerRow = new LinearLayout(this);
         headerRow.setLayoutParams(new LinearLayout.LayoutParams(
@@ -347,6 +395,7 @@ public class HomeActivity extends AppCompatActivity {
         return headerRow;
     }
 
+
     private String makePosterUrl(String path) {
         if (path == null || path.isEmpty()) {
             Log.d("PosterUrl", "path is null/empty");
@@ -358,7 +407,9 @@ public class HomeActivity extends AppCompatActivity {
         return fullUrl;
     }
 
+
     // ==================== 继续观看 ====================
+
 
     private void addContinueWatching(LinearLayout cont, List<WatchRecord> records, int viewAllId) {
         TextView h = new TextView(this);
@@ -404,6 +455,7 @@ public class HomeActivity extends AppCompatActivity {
         cont.addView(makeSpacer(6));
     }
 
+
     private View makeWatchCard(WatchRecord record) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -411,10 +463,11 @@ public class HomeActivity extends AppCompatActivity {
         card.setPadding(6, 6, 6, 6);
         card.setFocusable(true);
 
-        ImageView poster = new ImageView(this);
+        RoundedImageView poster = new RoundedImageView(this);
         poster.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 280));
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        poster.setCornerRadius(10);
         poster.setBackgroundColor(0xFF333333);
         String imgUrl = makePosterUrl(record.poster);
         if (imgUrl != null) { poster.setTag(imgUrl); }
@@ -429,13 +482,13 @@ public class HomeActivity extends AppCompatActivity {
         int pct = Math.max(0, Math.min(100, record.getProgressPercent()));
         Log.d("Overview", "进度条: ts=" + record.ts + " dur=" + record.duration + " pct=" + pct + " " + record.getDisplayTitle());
         if (pct > 0) {
-            View f = new View(this);
+            View f = new View(HomeActivity.this);
             f.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, pct));
             f.setBackgroundColor(0xFF81C784);
             pBar.addView(f);
         }
         if (pct < 100) {
-            View r = new View(this);
+            View r = new View(HomeActivity.this);
             r.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 100 - pct));
             r.setBackgroundColor(0xFF555555);
             pBar.addView(r);
@@ -473,6 +526,7 @@ public class HomeActivity extends AppCompatActivity {
         return card;
     }
 
+
     private void setFocusDownInContainer(ViewGroup group, int targetId) {
         for (int i = 0; i < group.getChildCount(); i++) {
             View v = group.getChildAt(i);
@@ -485,7 +539,9 @@ public class HomeActivity extends AppCompatActivity {
         }
     }
 
+
     // ==================== 横向滚动卡片 ====================
+
 
     private void populateGrid(LinearLayout cont, List<PlayListItem> items) {
         HorizontalScrollView hsv = new HorizontalScrollView(this);
@@ -556,6 +612,7 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     /** 竖版卡片（2:3 比例适配海报图，图片为主，文字一条） */
+
     private View makeItemCard(PlayListItem item) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -563,12 +620,13 @@ public class HomeActivity extends AppCompatActivity {
         card.setPadding(6, 6, 6, 6);
         card.setFocusable(true);
 
-        // 海报 — 只设URL标记，不加载（等页面显示完后统一逐张加载）
-        ImageView iv = new ImageView(this);
+        // 海报 — 16:9 比例，等页面显示完后统一逐张加载
+        RoundedImageView iv = new RoundedImageView(this);
         iv.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 280));
-        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        iv.setScaleType(ImageView.ScaleType.FIT_XY);
         iv.setBackgroundColor(0xFF333333);
+        iv.setCornerRadius(10);
         String imgUrl = makePosterUrl(item.poster);
         if (imgUrl != null) { iv.setTag(imgUrl); }
         card.addView(iv);
@@ -615,30 +673,43 @@ public class HomeActivity extends AppCompatActivity {
         return card;
     }
 
+
     private void onItemClick(PlayListItem item) {
         showDetail(item);  // 全部走 getPlayInfo
     }
 
+
     // ==================== 查看全部 ====================
 
+
     private void browseItems(String ancestorGuid, String title) {
+        browseItemsInContainer(ancestorGuid, title, moviesContainer, tvMoviesLoading);
+    }
+
+    private void browseItemsInContainer(String ancestorGuid, String title,
+                                        LinearLayout container, TextView loadingView) {
         Log.d("Overview", "browseItems: guid=" + ancestorGuid + " title=" + title);
-        showingOverview = false;
-        moviesContainer.removeAllViews();
-        tvMoviesLoading.setVisibility(View.VISIBLE);
+        savedDetailItem = null; savedDetailInfo = null;
+        showingEpisodes = false;
+        savedBrowseGuid = ancestorGuid; savedBrowseTitle = title;
+        browseFromLibrary = (container == libraryContainer);
+        if (container == moviesContainer) showingOverview = false;
+        container.removeAllViews();
+        loadingView.setVisibility(View.VISIBLE);
 
         apiManager.getApi().getItemList(ItemListRequest.browseLibrary(ancestorGuid))
                 .enqueue(new Callback<ApiResponse<ItemListResponse>>() {
             @Override
             public void onResponse(Call<ApiResponse<ItemListResponse>> call,
                                    Response<ApiResponse<ItemListResponse>> response) {
-                tvMoviesLoading.setVisibility(View.GONE);
+                loadingView.setVisibility(View.GONE);
                 Log.d("Overview", "browseItems response code=" + response.code());
 
                 if (response.isSuccessful() && response.body() != null && response.body().code == 0
                         && response.body().data != null && response.body().data.list != null
                         && !response.body().data.list.isEmpty()) {
                     List<PlayListItem> list = response.body().data.list;
+                    savedBrowseList = list;
                     int total = response.body().data.total;
                     Log.d("Overview", "browseItems: got " + list.size() + " items, total=" + total);
 
@@ -649,26 +720,46 @@ public class HomeActivity extends AppCompatActivity {
                     h.setText(title + "  (" + total + "项)");
                     h.setTextColor(0xFFEEEEEE);
                     h.setTextSize(14);
-                    moviesContainer.addView(h);
-                    // 多行竖卡网格（每行2张）
-                    for (int idx = 0; idx < list.size(); idx += 2) {
+                    container.addView(h);
+                    // 自适应列数网格（最小卡片宽200dp）
+                    float density = getResources().getDisplayMetrics().density;
+                    int cols = Math.max(3, (int) (getResources().getDisplayMetrics().widthPixels / (130 * density)));
+                    for (int idx = 0; idx < list.size(); idx += cols) {
                         LinearLayout row = new LinearLayout(HomeActivity.this);
                         row.setLayoutParams(new LinearLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT, 410));
+                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                         row.setOrientation(LinearLayout.HORIZONTAL);
-                        for (int c = 0; c < 2 && idx + c < list.size(); c++) {
-                            View card = makeItemCard(list.get(idx + c));
+                        int inRow = Math.min(cols, list.size() - idx);
+                        for (int c = 0; c < cols && idx + c < list.size(); c++) {
+                            PlayListItem pli = list.get(idx + c);
+                            View card = makeItemCard(pli);
+                            // 图片按9:16竖版比例
+                            if (card instanceof ViewGroup) {
+                                View ch = ((ViewGroup) card).getChildAt(0);
+                                if (ch instanceof ImageView) {
+                                    int posterH = Math.min(550, (getResources().getDisplayMetrics().widthPixels / cols) * 16 / 9);
+                                    ch.setLayoutParams(new LinearLayout.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT, posterH));
+                                }
+                            }
                             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
-                            if (c == 0) lp.rightMargin = 10;
-                            else lp.leftMargin = 10;
+                                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+                            lp.rightMargin = 6;
+                            lp.leftMargin = 6;
                             card.setLayoutParams(lp);
                             row.addView(card);
                         }
-                        moviesContainer.addView(row);
-                        moviesContainer.addView(makeSpacer(16));
+                        // 补齐空位
+                        for (int e = inRow; e < cols; e++) {
+                            View spacer = new View(HomeActivity.this);
+                            spacer.setLayoutParams(new LinearLayout.LayoutParams(
+                                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+                            row.addView(spacer);
+                        }
+                        container.addView(row);
+                        container.addView(makeSpacer(12));
                     }
-                    new Handler(Looper.getMainLooper()).post(() -> loadImagesLazily(moviesContainer, 0));
+                    new Handler(Looper.getMainLooper()).post(() -> loadImagesLazily(container, 0));
                 } else {
                     TextView e = new TextView(HomeActivity.this);
                     e.setLayoutParams(new LinearLayout.LayoutParams(
@@ -677,14 +768,72 @@ public class HomeActivity extends AppCompatActivity {
                     e.setText("暂无内容");
                     e.setTextColor(0xFF808080);
                     e.setTextSize(14);
-                    moviesContainer.addView(e);
+                    container.addView(e);
                 }
             }
             @Override
             public void onFailure(Call<ApiResponse<ItemListResponse>> call, Throwable t) {
-                tvMoviesLoading.setVisibility(View.GONE);
+                loadingView.setVisibility(View.GONE);
             }
         });
+    }
+
+    /** 从缓存数据重绘浏览网格（横竖屏切换时调用） */
+
+    private void renderBrowseGrid(List<PlayListItem> list, String title) {
+        renderGridInContainer(list, title, libraryContainer);
+    }
+
+    /** 在指定容器中绘制缓存网格 */
+
+    private void renderGridInContainer(List<PlayListItem> list, String title, LinearLayout container) {
+        container.removeAllViews();
+        int total = list.size();
+
+        TextView h = new TextView(this);
+        h.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        h.setPadding(6, 8, 6, 4);
+        h.setText(title + "  (" + total + "项)");
+        h.setTextColor(0xFFEEEEEE);
+        h.setTextSize(14);
+        container.addView(h);
+
+        float density = getResources().getDisplayMetrics().density;
+        int cols = Math.max(3, (int) (getResources().getDisplayMetrics().widthPixels / (130 * density)));
+        for (int idx = 0; idx < list.size(); idx += cols) {
+            LinearLayout row = new LinearLayout(this);
+            row.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            int inRow = Math.min(cols, list.size() - idx);
+            for (int c = 0; c < cols && idx + c < list.size(); c++) {
+                PlayListItem pli = list.get(idx + c);
+                View card = makeItemCard(pli);
+                if (card instanceof ViewGroup) {
+                    View ch = ((ViewGroup) card).getChildAt(0);
+                    if (ch instanceof ImageView) {
+                        int posterH = Math.min(550, (getResources().getDisplayMetrics().widthPixels / cols) * 16 / 9);
+                        ch.setLayoutParams(new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT, posterH));
+                    }
+                }
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+                lp.rightMargin = 6; lp.leftMargin = 6;
+                card.setLayoutParams(lp);
+                row.addView(card);
+            }
+            for (int e = inRow; e < cols; e++) {
+                View spacer = new View(this);
+                spacer.setLayoutParams(new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+                row.addView(spacer);
+            }
+            container.addView(row);
+            container.addView(makeSpacer(12));
+        }
+        new Handler(Looper.getMainLooper()).post(() -> loadImagesLazily(container, 0));
     }
 
     /** 启动播放器 */
@@ -709,10 +858,15 @@ public class HomeActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
+
     // ==================== 详情页（getPlayInfo → 按类型展示） ====================
 
+
     private void showDetail(PlayListItem item) {
+        switchTab(0);
+        savedBrowseList = null; savedBrowseGuid = null;
         showingOverview = false;
+        showingEpisodes = false;
         moviesContainer.removeAllViews();
         tvMoviesLoading.setVisibility(View.VISIBLE);
         tvMoviesLoading.setText("加载中...");
@@ -739,57 +893,100 @@ public class HomeActivity extends AppCompatActivity {
         });
     }
 
-    /** 构建详情页 */
+    /** 构建详情页（自动适应横竖屏） */
+
     private void buildDetailPage(PlayListItem item, PlayInfoResponse info) {
         moviesContainer.removeAllViews();
+        savedDetailItem = item; savedDetailInfo = info;
 
-        // 顶部栏（居中标题）
-        TextView tvTitle = new TextView(this);
-        tvTitle.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 66));
-        tvTitle.setGravity(Gravity.CENTER);
-        tvTitle.setPadding(12, 0, 12, 0);
+        boolean isLandscape = getResources().getConfiguration().orientation
+                == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+
         String epTitle = info.item != null && info.item.title != null ? info.item.title : item.title;
         String series = info.item != null && info.item.tvTitle != null ? info.item.tvTitle : "";
         int epNum = info.item != null ? info.item.episodeNumber : 0;
-        StringBuilder titleBuilder = new StringBuilder();
-        if (!series.isEmpty()) titleBuilder.append(series);
-        if (epNum > 0) titleBuilder.append(" ").append(epNum).append("集");
-        if (epTitle != null && !epTitle.isEmpty() && !epTitle.equals(series)) {
-            titleBuilder.append(" ").append(epTitle);
-        }
-        // 顶部标题栏去掉（用底部卡片标题代替）
 
-        // 可滚动内容区
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(14, 0, 14, 20);
-
-        // 海报（优先用 backdrops 背景大图，没有则用 poster）
+        // 海报路径
         String posterPath = info.getBackdropPath();
         if (posterPath == null || (info.item != null && info.item.backdrops == null)) {
             posterPath = info.getPosterPath();
         }
         if (posterPath == null) posterPath = item.poster;
-        RoundedImageView poster = new RoundedImageView(this);
-        poster.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        poster.setAdjustViewBounds(true);
-        poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        poster.setBackgroundColor(0xFF2A2A2A);
-        poster.setCornerRadius(10);
         String pUrl = makePosterUrl(posterPath);
-        if (pUrl != null) { poster.setTag(pUrl); }
-        content.addView(poster);
-        if (pUrl != null) {
-            new Handler(Looper.getMainLooper()).post(() ->
-                SimpleImageLoader.load(pUrl, poster, apiManager.getClient()));
-        }
-        content.addView(makeSpacer(12));
 
+        if (isLandscape) {
+            // ====== 横屏：左图右信息 ======
+            int screenH = getResources().getDisplayMetrics().heightPixels;
+            // 减去状态栏高度
+            int sbId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+            if (sbId > 0) screenH -= getResources().getDimensionPixelSize(sbId);
+            LinearLayout rootRow = new LinearLayout(this);
+            rootRow.setOrientation(LinearLayout.HORIZONTAL);
+            rootRow.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+            // 左侧海报（用卡片同款竖图 9:16），圆角处理
+            String posterLand = makePosterUrl(item.poster);
+            RoundedImageView posterL = new RoundedImageView(this);
+            int posterW = screenH * 9 / 16;
+            posterL.setLayoutParams(new LinearLayout.LayoutParams(posterW, screenH));
+            posterL.setScaleType(ImageView.ScaleType.FIT_XY);
+            posterL.setBackgroundColor(0xFF1A1A1A);
+            posterL.setCornerRadius(10);
+            if (posterLand != null) {
+                posterL.setTag(posterLand);
+                new Handler(Looper.getMainLooper()).post(() ->
+                        SimpleImageLoader.load(posterLand, posterL, apiManager.getClient()));
+            }
+            rootRow.addView(posterL);
+
+            // 右侧滚动内容
+            androidx.core.widget.NestedScrollView svL = new androidx.core.widget.NestedScrollView(this);
+            svL.setLayoutParams(new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+            LinearLayout contentL = new LinearLayout(this);
+            contentL.setOrientation(LinearLayout.VERTICAL);
+            contentL.setPadding(16, 12, 16, 20);
+            buildDetailContent(contentL, item, info, epTitle, series, epNum, pUrl);
+            svL.addView(contentL);
+            rootRow.addView(svL);
+
+            moviesContainer.addView(rootRow);
+        } else {
+            // ====== 竖屏：原布局 ======
+            androidx.core.widget.NestedScrollView scrollView = new androidx.core.widget.NestedScrollView(this);
+            scrollView.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            LinearLayout content = new LinearLayout(this);
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.setPadding(14, 0, 14, 20);
+
+            // 海报
+            RoundedImageView poster = new RoundedImageView(this);
+            poster.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            poster.setAdjustViewBounds(true);
+            poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            poster.setBackgroundColor(0xFF2A2A2A);
+            poster.setCornerRadius(10);
+            if (pUrl != null) { poster.setTag(pUrl); }
+            content.addView(poster);
+            if (pUrl != null) {
+                new Handler(Looper.getMainLooper()).post(() ->
+                        SimpleImageLoader.load(pUrl, poster, apiManager.getClient()));
+            }
+            content.addView(makeSpacer(12));
+
+            buildDetailContent(content, item, info, epTitle, series, epNum, pUrl);
+
+            scrollView.addView(content);
+            moviesContainer.addView(scrollView);
+        }
+    }
+
+    /** 构建详情页的核心内容（元数据、播放按钮、剧集列表） */
+    private void buildDetailContent(LinearLayout content, PlayListItem item, PlayInfoResponse info,
+                                     String epTitle, String series, int epNum, String pUrl) {
         // 元数据卡片
         LinearLayout metaCard = new LinearLayout(this);
         metaCard.setLayoutParams(new LinearLayout.LayoutParams(
@@ -879,7 +1076,7 @@ public class HomeActivity extends AppCompatActivity {
         content.addView(metaCard);
         content.addView(makeSpacer(12));
 
-        // 简介卡片
+        // 简介卡片（限制最大高度，防过长遮挡播放按钮）
         String overview = info.item != null && info.item.overview != null
                 ? info.item.overview : item.overview;
         if (overview != null && !overview.isEmpty()) {
@@ -896,6 +1093,13 @@ public class HomeActivity extends AppCompatActivity {
             ovLabel.setTextSize(11);
             overviewCard.addView(ovLabel);
 
+            androidx.core.widget.NestedScrollView ovScroll = new androidx.core.widget.NestedScrollView(this);
+            ovScroll.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 300));
+            ovScroll.setFocusable(true);
+            ovScroll.setDescendantFocusability(ViewGroup.FOCUS_BEFORE_DESCENDANTS);
+            ovScroll.setOnFocusChangeListener((v, hasFocus) ->
+                    v.setBackgroundColor(hasFocus ? 0x33FFFFFF : 0x00000000));
             TextView ov = new TextView(this);
             ov.setLayoutParams(new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -904,7 +1108,8 @@ public class HomeActivity extends AppCompatActivity {
             ov.setTextColor(0xFFCCCCCC);
             ov.setTextSize(14);
             ov.setLineSpacing(6, 1);
-            overviewCard.addView(ov);
+            ovScroll.addView(ov);
+            overviewCard.addView(ovScroll);
             content.addView(overviewCard);
             content.addView(makeSpacer(12));
         }
@@ -973,7 +1178,7 @@ public class HomeActivity extends AppCompatActivity {
             gd.setColor(0xFF455A64);
             progressLayer.setBackgroundDrawable(gd);
 
-            View fill = new View(this);
+            View fill = new View(HomeActivity.this);
             fill.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, progressPct));
             android.graphics.drawable.GradientDrawable fillGd = new android.graphics.drawable.GradientDrawable();
             fillGd.setCornerRadii(new float[]{r, r, 0, 0, 0, 0, r, r});
@@ -981,7 +1186,7 @@ public class HomeActivity extends AppCompatActivity {
             fill.setBackgroundDrawable(fillGd);
             progressLayer.addView(fill);
 
-            View rest = new View(this);
+            View rest = new View(HomeActivity.this);
             rest.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 100 - progressPct));
             rest.setBackgroundColor(0x00000000); // 透明
             progressLayer.addView(rest);
@@ -1033,8 +1238,6 @@ public class HomeActivity extends AppCompatActivity {
             loadEpisodes(content, info.parentGuid, item, playBtn, pTs, historyEpGuid);
         }
 
-        scrollView.addView(content);
-        moviesContainer.addView(scrollView);
     }
 
     /** 加载剧集列表并按季分组 */
@@ -1067,6 +1270,7 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     /** 显示季列表 */
+
     private void showSeasons(LinearLayout content, List<PlayListItem> episodes, PlayListItem item) {
         Map<Integer, List<PlayListItem>> map = new HashMap<>();
         for (PlayListItem ep : episodes) {
@@ -1120,7 +1324,9 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     /** 显示某季剧集 */
+
     private void showEpisodes(List<PlayListItem> eps, int sn, PlayListItem original) {
+        showingEpisodes = true;
         moviesContainer.removeAllViews();
 
         // 标题
@@ -1141,6 +1347,7 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     /** 剧集条目卡片 */
+
     private View makeEpisodeItem(PlayListItem ep, boolean isCurrent) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
@@ -1225,7 +1432,9 @@ public class HomeActivity extends AppCompatActivity {
         return card;
     }
 
+
     // ==================== 媒体库 Tab ====================
+
 
     private void loadMediaLibraries() {
         clearContainer(libraryContainer, tvLibraryLoading, tvLibraryEmpty);
@@ -1262,6 +1471,7 @@ public class HomeActivity extends AppCompatActivity {
         });
     }
 
+
     private void populateLibGrid(LinearLayout cont, List<MediaDbItem> libs) {
         cont.removeAllViews();
         for (int i = 0; i < libs.size(); i++) {
@@ -1269,6 +1479,7 @@ public class HomeActivity extends AppCompatActivity {
             if (i < libs.size() - 1) cont.addView(makeSpacer(8));
         }
     }
+
 
     private View makeLibCard(MediaDbItem lib) {
         LinearLayout card = new LinearLayout(this);
@@ -1311,13 +1522,14 @@ public class HomeActivity extends AppCompatActivity {
         card.setTag(lib);
         card.setOnClickListener(v -> {
             MediaDbItem m = (MediaDbItem) card.getTag();
-            switchTab(0);
-            browseItems(m.guid, m.title);
+            browseItemsInContainer(m.guid, m.title, libraryContainer, tvLibraryLoading);
         });
         return card;
     }
 
+
     // ==================== 设置 ====================
+
 
     private void setupSettings() {
         tvSettingUsername.setText("用户名: " + prefs.getString("user", ""));
@@ -1394,6 +1606,7 @@ public class HomeActivity extends AppCompatActivity {
         });
     }
 
+
     private void toggleDecoder() {
         String cur = prefs.getString(PREF_DECODER, "hardware");
         if ("hardware".equals(cur)) {
@@ -1407,392 +1620,34 @@ public class HomeActivity extends AppCompatActivity {
         }
     }
 
-    // ==================== 检测更新 ====================
-
-    /** 更新源（按优先级） */
-    private static final String[] UPDATE_URLS = {
-        "https://raw.giteeusercontent.com/coffee710/fntv/raw/master/update.json",
-        "https://jsd.onmicrosoft.cn/gh/rgcaafe/fnos_tv_danmu@master/update.json",
-        "https://cdn.jsdelivr.net/gh/rgcaafe/fnos_tv_danmu@master/update.json",
-        "https://fastly.jsdelivr.net/gh/rgcaafe/fnos_tv_danmu@master/update.json",
-        "https://raw.githubusercontent.com/rgcaafe/fnos_tv_danmu/master/update.json"
-    };
-
-    private void setupUpdateCheck() {
-        btnCheckUpdate.setOnClickListener(v -> checkUpdate());
-    }
-
-    private void checkUpdate() {
-        btnCheckUpdate.setEnabled(false);
-        btnCheckUpdate.setText("检查中...");
-        new Thread(() -> {
-            try {
-                org.json.JSONObject json = null;
-                String usedUrl = "";
-                String ts = new java.text.SimpleDateFormat("yyyyMMddHHmm", java.util.Locale.CHINA).format(new java.util.Date());
-                for (String url : UPDATE_URLS) {
-                    try {
-                        // 非 GitHub raw 源追加时间戳参数，避免 CDN 缓存
-                        if (!url.contains("raw.githubusercontent.com")) {
-                            url = url + (url.contains("?") ? "&" : "?") + "t=" + ts;
-                        }
-                        Log.d("Update", "尝试源: " + url);
-                        java.net.URL u = new java.net.URL(url);
-                        java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
-                        c.setConnectTimeout(8000);
-                        c.setReadTimeout(8000);
-                        c.setInstanceFollowRedirects(true);
-                        c.connect();
-                        int code = c.getResponseCode();
-                        Log.d("Update", "响应码: " + code + " 来自: " + url);
-                        if (code == 200) {
-                            java.io.BufferedReader r = new java.io.BufferedReader(
-                                    new java.io.InputStreamReader(c.getInputStream(), "UTF-8"));
-                            StringBuilder sb = new StringBuilder(); String l;
-                            while ((l = r.readLine()) != null) sb.append(l);
-                            r.close();
-                            String body = sb.toString();
-                            Log.d("Update", "响应体: " + body.substring(0, Math.min(300, body.length())));
-                            json = new org.json.JSONObject(body);
-                            usedUrl = url;
-                            break;
-                        } else {
-                            // 读取错误流
-                            try {
-                                java.io.BufferedReader er = new java.io.BufferedReader(
-                                        new java.io.InputStreamReader(c.getErrorStream(), "UTF-8"));
-                                StringBuilder eb = new StringBuilder(); String el;
-                                while ((el = er.readLine()) != null) eb.append(el);
-                                er.close();
-                                Log.w("Update", "错误响应: " + eb.toString());
-                            } catch (Exception ignored2) {}
-                        }
-                    } catch (Exception e) {
-                        Log.e("Update", "源 \"" + url + "\" 失败: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-                    }
-                }
-
-                if (json == null) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "检查更新失败，无法连接更新服务器", Toast.LENGTH_LONG).show();
-                        resetUpdateBtn();
-                    });
-                    return;
-                }
-
-                int remoteVersionCode = json.optInt("versionCode", 0);
-                int currentVersion = BuildConfig.VERSION_CODE;
-                final String versionName = json.optString("versionName", "");
-                final String apkUrl = json.optString("apkUrl", "");
-                final String changelog = json.optString("changelog", "暂无更新说明");
-                final boolean forceUpdate = json.optBoolean("forceUpdate", false);
-
-                Log.d("Update", "远程: v" + remoteVersionCode + " 本地: v" + currentVersion + " 来源: " + usedUrl);
-
-                if (remoteVersionCode <= currentVersion) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "已是最新版本", Toast.LENGTH_SHORT).show();
-                        resetUpdateBtn();
-                    });
-                    return;
-                }
-
-                runOnUiThread(() -> {
-                    showUpdateDialog(versionName, changelog, forceUpdate, apkUrl, remoteVersionCode);
-                });
-
-            } catch (Exception e) {
-                Log.e("Update", "检查更新异常", e);
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "检查更新失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    resetUpdateBtn();
-                });
-            }
-        }).start();
-    }
-
-    private void showUpdateDialog(final String versionName, final String changelog,
-                                   final boolean forceUpdate, final String apkUrl, final int remoteVersion) {
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("发现新版本 v" + versionName)
-                .setMessage(changelog)
-                .setCancelable(!forceUpdate)
-                .setPositiveButton("立即更新", (dialog, which) -> {
-                    dialog.dismiss();
-                    downloadAndInstall(apkUrl, remoteVersion);
-                })
-                .setNegativeButton(forceUpdate ? "退出应用" : "稍后再说", (dialog, which) -> {
-                    if (forceUpdate) {
-                        finishAffinity();
-                    } else {
-                        dialog.dismiss();
-                        resetUpdateBtn();
-                    }
-                })
-                .show();
-    }
-
-    private void downloadAndInstall(final String apkUrl, final int remoteVersion) {
-        btnCheckUpdate.setText("下载中...");
-        btnCheckUpdate.setEnabled(false);
-        new Thread(() -> {
-            try {
-                java.net.URL url = new java.net.URL(apkUrl);
-                java.net.HttpURLConnection c = (java.net.HttpURLConnection) url.openConnection();
-                c.setConnectTimeout(15000);
-                c.setReadTimeout(30000);
-                c.setInstanceFollowRedirects(true);
-                c.connect();
-                final int respCode = c.getResponseCode();
-                if (respCode != 200) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "下载失败，服务器返回 " + respCode, Toast.LENGTH_LONG).show();
-                        resetUpdateBtn();
-                    });
-                    return;
-                }
-
-                java.io.File dir = new java.io.File(getExternalFilesDir(null), "download");
-                if (!dir.exists()) dir.mkdirs();
-                final java.io.File apkFile = new java.io.File(dir, "FNTV_v" + remoteVersion + ".apk");
-
-                java.io.InputStream is = c.getInputStream();
-                java.io.FileOutputStream fos = new java.io.FileOutputStream(apkFile);
-                byte[] buf = new byte[8192];
-                int n;
-                long total = 0;
-                while ((n = is.read(buf)) != -1) {
-                    fos.write(buf, 0, n);
-                    total += n;
-                }
-                fos.close();
-                is.close();
-
-                Log.d("Update", "下载完成: " + apkFile.getAbsolutePath() + " (" + total + " bytes)");
-
-                // 检查文件头是否是 APK (ZIP 格式)
-                java.io.RandomAccessFile raf = new java.io.RandomAccessFile(apkFile, "r");
-                byte[] header = new byte[4];
-                raf.read(header);
-                raf.close();
-                String headerStr = new String(header, "UTF-8");
-                Log.d("Update", "APK 文件头: " + headerStr + " (" + bytesToHex(header) + ")");
-                if (!"PK".equals(headerStr.substring(0, 2))) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "下载文件不是有效的 APK（文件头异常）", Toast.LENGTH_LONG).show();
-                        resetUpdateBtn();
-                    });
-                    return;
-                }
-
-                // 签名校验
-                if (!verifyApkSignature(apkFile)) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "APK 签名校验失败，可能已被篡改", Toast.LENGTH_LONG).show();
-                        resetUpdateBtn();
-                    });
-                    return;
-                }
-
-                runOnUiThread(() -> installApk(apkFile));
-
-            } catch (Exception e) {
-                Log.e("Update", "下载失败", e);
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "下载失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    resetUpdateBtn();
-                });
-            }
-        }).start();
-    }
-
-    /** APK 签名校验：确保与当前安装包签名一致 */
-    private boolean verifyApkSignature(java.io.File apkFile) {
-        try {
-            android.content.pm.PackageManager pm = getPackageManager();
-            // 获取当前安装包的签名
-            android.content.pm.PackageInfo currentInfo;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                currentInfo = pm.getPackageInfo(getPackageName(),
-                        android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES);
-                if (currentInfo.signingInfo == null) return false;
-                android.content.pm.Signature[] sigs = currentInfo.signingInfo.getApkContentsSigners();
-                if (sigs == null || sigs.length == 0) return false;
-
-                // 用 PackageInstaller.SessionParams 验证或简单比较签名
-                String currentSig = android.util.Base64.encodeToString(sigs[0].toByteArray(), android.util.Base64.NO_WRAP);
-
-                // 对新 APK 做同样的签名提取 (通过 PackageManager 的 install 验证)
-                // 实际签名验证由安装器完成，这里只做简单存根
-                Log.d("Update", "当前签名: " + currentSig.substring(0, Math.min(20, currentSig.length())) + "...");
-                return true;
-            } else {
-                currentInfo = pm.getPackageInfo(getPackageName(), android.content.pm.PackageManager.GET_SIGNATURES);
-                if (currentInfo.signatures == null || currentInfo.signatures.length == 0) return false;
-                return true;
-            }
-        } catch (Exception e) {
-            Log.e("Update", "签名校验异常", e);
-            return false;
-        }
-    }
-
-    private void installApk(java.io.File apkFile) {
-        try {
-            // 1. PackageInstaller Session API（不依赖外部 Activity，最可靠）
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                try {
-                    android.content.pm.PackageInstaller installer = getPackageManager().getPackageInstaller();
-                    android.content.pm.PackageInstaller.SessionParams params =
-                            new android.content.pm.PackageInstaller.SessionParams(
-                                    android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-                    params.setAppPackageName(getPackageName());
-                    int sessionId = installer.createSession(params);
-                    android.content.pm.PackageInstaller.Session session = installer.openSession(sessionId);
-                    try (java.io.InputStream in = new java.io.FileInputStream(apkFile)) {
-                        long total = apkFile.length();
-                        java.io.OutputStream out = session.openWrite("base.apk", 0, total);
-                        byte[] buf = new byte[8192];
-                        int n;
-                        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
-                        out.close();
-                    }
-                    // 用 Activity 返回作为状态回调（安装完成后回到此页面）
-                    int piFlags = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O
-                            ? android.app.PendingIntent.FLAG_IMMUTABLE : 0;
-                    android.app.PendingIntent pi = android.app.PendingIntent.getActivity(
-                            this, 0, new Intent(this, HomeActivity.class), piFlags);
-                    session.commit(pi.getIntentSender());
-                    session.close();
-                    Log.d("Update", "PackageInstaller Session 提交成功");
-                    return;
-                } catch (Exception e1) {
-                    Log.w("Update", "PackageInstaller Session 失败: " + e1.getMessage() + "，尝试 ACTION_INSTALL_PACKAGE");
-                }
-            }
-
-            // 2. ACTION_INSTALL_PACKAGE + FileProvider
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                try {
-                    if (!getPackageManager().canRequestPackageInstalls()) {
-                        Intent permIntent = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
-                        permIntent.setData(android.net.Uri.parse("package:" + getPackageName()));
-                        startActivity(permIntent);
-                        Toast.makeText(this, "请允许安装未知来源应用后重试", Toast.LENGTH_LONG).show();
-                        resetUpdateBtn();
-                        return;
-                    }
-                    android.net.Uri apkUri = androidx.core.content.FileProvider.getUriForFile(
-                            this, getPackageName() + ".fileprovider", apkFile);
-                    Intent install = new Intent(Intent.ACTION_INSTALL_PACKAGE);
-                    install.setData(apkUri);
-                    install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(install);
-                    return;
-                } catch (android.content.ActivityNotFoundException e2) {
-                    Log.w("Update", "ACTION_INSTALL_PACKAGE 不可用，尝试 ACTION_VIEW");
-                }
-            }
-
-            // 3. ACTION_VIEW + FileProvider
-            try {
-                Intent install = new Intent(Intent.ACTION_VIEW);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    android.net.Uri apkUri = androidx.core.content.FileProvider.getUriForFile(
-                            this, getPackageName() + ".fileprovider", apkFile);
-                    install.setDataAndType(apkUri, "application/vnd.android.package-archive");
-                    install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                } else {
-                    install.setDataAndType(android.net.Uri.fromFile(apkFile), "application/vnd.android.package-archive");
-                }
-                install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(install);
-                return;
-            } catch (android.content.ActivityNotFoundException e3) {
-                Log.w("Update", "ACTION_VIEW 不可用");
-            }
-
-            // 4. 所有安装方式都失败 → 复制到下载目录 + 引导用户
-            copyApkToDownloads(apkFile, null);
-        } catch (Exception e) {
-            Log.e("Update", "安装失败", e);
-            copyApkToDownloads(apkFile, e);
-        }
-    }
-
-    /** 安装方式全部失败时的兜底：复制到下载目录并提示用户 */
-    private void copyApkToDownloads(java.io.File apkFile, Exception originalError) {
-        try {
-            java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(
-                    android.os.Environment.DIRECTORY_DOWNLOADS);
-            if (!downloadDir.exists()) downloadDir.mkdirs();
-            java.io.File targetFile = new java.io.File(downloadDir, "FNTV_update_" + apkFile.getName());
-            try (java.io.FileInputStream fis = new java.io.FileInputStream(apkFile);
-                 java.io.FileOutputStream fos = new java.io.FileOutputStream(targetFile)) {
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = fis.read(buf)) != -1) fos.write(buf, 0, n);
-            }
-            final String msg = "安装器不可用，APK 已复制到：\n" + targetFile.getAbsolutePath()
-                    + "\n请用文件管理器打开此文件进行安装。";
-            Log.w("Update", msg);
-            runOnUiThread(() -> {
-                new android.app.AlertDialog.Builder(this)
-                        .setTitle("安装失败")
-                        .setMessage(msg)
-                        .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
-                        .show();
-            });
-        } catch (Exception copyErr) {
-            Log.e("Update", "复制失败", copyErr);
-            runOnUiThread(() -> {
-                String errMsg = originalError != null
-                        ? "安装失败: " + originalError.getMessage()
-                        : "安装器不可用";
-                new android.app.AlertDialog.Builder(this)
-                        .setTitle("安装失败")
-                        .setMessage(errMsg + "\nAPK 位置：\n" + apkFile.getAbsolutePath())
-                        .setPositiveButton("我知道了", (d, w) -> resetUpdateBtn())
-                        .show();
-            });
-        }
-    }
-
-    private void resetUpdateBtn() {
-        btnCheckUpdate.setEnabled(true);
-        btnCheckUpdate.setText("检查更新");
-    }
-
-    private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) sb.append(String.format("%02X ", b));
-        return sb.toString().trim();
-    }
 
     // ==================== 问题反馈 ====================
+
 
     private void setupFeedback() {
         btnFeedback.setOnClickListener(v -> {
             new android.app.AlertDialog.Builder(this)
                     .setTitle("问题反馈")
-                    .setMessage("如有问题或建议，请加 QQ：\n710324888")
-                    .setPositiveButton("复制QQ", (dialog, which) -> {
+                    .setMessage("如有问题或建议，请加 QQ群：\n693516430")
+                    .setPositiveButton("复制群号", (dialog, which) -> {
                         android.content.ClipboardManager cm = (android.content.ClipboardManager)
                                 getSystemService(CLIPBOARD_SERVICE);
-                        cm.setText("710324888");
-                        Toast.makeText(this, "QQ已复制", Toast.LENGTH_SHORT).show();
+                        cm.setText("693516430");
+                        Toast.makeText(this, "群号已复制", Toast.LENGTH_SHORT).show();
                     })
                     .setNegativeButton("关闭", null)
                     .show();
         });
     }
 
+
     // ==================== 登出 ====================
+
 
     private void setupLogout() {
         btnLogout.setOnClickListener(v -> logout());
     }
+
 
     private void logout() {
         prefs.edit().remove("pass").putBoolean("remember", false).apply();
@@ -1802,7 +1657,9 @@ public class HomeActivity extends AppCompatActivity {
         finish();
     }
 
+
     // ==================== 工具 ====================
+
 
     private void clearContainer(LinearLayout c, TextView l, TextView e) {
         l.setVisibility(View.GONE);
@@ -1813,12 +1670,14 @@ public class HomeActivity extends AppCompatActivity {
         }
     }
 
+
     private View makeSpacer(int h) {
-        View v = new View(this);
+        View v = new View(HomeActivity.this);
         v.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, h));
         return v;
     }
+
 
     private String formatDuration(long sec) {
         if (sec <= 0) return "";
@@ -1830,6 +1689,7 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     /** 逐张加载图片 */
+
     private void loadImagesLazily(ViewGroup container, int index) {
         List<ImageView> targets = new ArrayList<>();
         collectImageViews(container, targets);
@@ -1852,6 +1712,7 @@ public class HomeActivity extends AppCompatActivity {
         }
     }
 
+
     private void collectImageViews(ViewGroup parent, List<ImageView> out) {
         for (int i = 0; i < parent.getChildCount(); i++) {
             View child = parent.getChildAt(i);
@@ -1863,16 +1724,35 @@ public class HomeActivity extends AppCompatActivity {
         }
     }
 
+
     // ==================== 按键 ====================
 
     @Override
+
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+            // 媒体库浏览中 → 返回媒体库首页
+            if (currentTab == 1 && savedBrowseGuid != null) {
+                savedBrowseGuid = null; savedBrowseList = null;
+                loadMediaLibraries();
+                return true;
+            }
+            // 剧集选择页 → 返回详情页
+            if (showingEpisodes && savedDetailItem != null && savedDetailInfo != null) {
+                showingEpisodes = false;
+                buildDetailPage(savedDetailItem, savedDetailInfo);
+                return true;
+            }
             if (!showingOverview) {
                 loadOverview();
                 return true;
             }
-            finish();
+            if (backPressedTime + 2000 > System.currentTimeMillis()) {
+                finish();
+            } else {
+                backPressedTime = System.currentTimeMillis();
+                Toast.makeText(this, "再按一次返回桌面", Toast.LENGTH_SHORT).show();
+            }
             return true;
         }
         return super.onKeyDown(keyCode, event);

@@ -435,6 +435,21 @@ public class DanmuManager {
         dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xDD1A1A1A));
         dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 
+        // 标题上加当前剧集信息
+        TextView titleView = dialog.findViewById(R.id.dm_search_title);
+        if (titleView != null) {
+            String epInfo = "";
+            if (pendingDanmuTitle != null) {
+                java.util.regex.Matcher epM = java.util.regex.Pattern.compile("[Ee](\\d+)").matcher(pendingDanmuTitle);
+                if (epM.find()) epInfo = " - 第" + epM.group(1) + "集";
+            }
+            if (data.getItemTV() != null && !data.getItemTV().isEmpty()) {
+                titleView.setText("搜索弹幕 " + data.getItemTV() + epInfo);
+            } else if (data.getItemTitle() != null) {
+                titleView.setText("搜索弹幕 " + data.getItemTitle() + epInfo);
+            }
+        }
+
         final EditText input = dialog.findViewById(R.id.dm_search_input);
         final Button sBtn = dialog.findViewById(R.id.dm_search_btn);
         final LinearLayout results = dialog.findViewById(R.id.dm_search_results);
@@ -500,6 +515,7 @@ public class DanmuManager {
                             results.addView(e);
                             return;
                         }
+                        // 当前剧集信息，拼接到搜索结果后面
                         for (int i = 0; i < Math.min(finalArr.length(), 20); i++) {
                             JSONObject o = finalArr.optJSONObject(i);
                             if (o == null) continue;
@@ -516,7 +532,7 @@ public class DanmuManager {
                             b.setPadding(16, 14, 16, 14);
                             b.setAllCaps(false);
                             b.setTextSize(14);
-                            b.setGravity(android.view.Gravity.START);
+                            b.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
                             b.setLayoutParams(new LinearLayout.LayoutParams(
                                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                             ((LinearLayout.LayoutParams) b.getLayoutParams()).setMargins(0, 0, 0, 6);
@@ -582,30 +598,84 @@ public class DanmuManager {
                     JSONObject epo = eps.getJSONObject(i);
                     int epNum = epo.optInt("episodeNumber", epo.optInt("ep", i + 1));
                     epIds[i] = epo.optInt("episodeId", epo.optInt("id", 0));
-                    epLabels[i] = "第" + epNum + "集";
+                    String epTitle = epo.optString("episodeTitle", "");
+                    epLabels[i] = !epTitle.isEmpty() ? epTitle : "第" + epNum + "集";
                 }
 
                 activity.runOnUiThread(() -> {
-                    new android.app.AlertDialog.Builder(activity)
-                            .setTitle("选择剧集")
-                            .setItems(epLabels, (dialog, which) -> {
-                                if (which >= 0 && which < epCount && epIds[which] > 0) {
-                                    // 保存手动匹配的番剧信息
-                                    if (animeId > 0 && animeName != null && data.getItemTV() != null && !data.getItemTV().isEmpty()) {
-                                        try {
-                                            String cacheJson = prefs.getString("danmu_match_cache", "{}");
-                                            JSONObject cache = new JSONObject(cacheJson);
-                                            cache.put(data.getItemTV(), animeId + "|" + animeName);
-                                            prefs.edit().putString("danmu_match_cache", cache.toString()).apply();
-                                        } catch (Exception ignored) {
-                                        }
-                                    }
-                                    loadDanmuByEp(epIds[which], animeName != null ? animeName + " " + epLabels[which] : null);
-                                } else
-                                    showDanmuStatus("弹幕: 无效剧集ID");
-                            })
-                            .setNegativeButton("取消", null)
-                            .show();
+                    final android.app.Dialog dialog = new android.app.Dialog(activity, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar);
+                    dialog.setContentView(R.layout.dialog_danmu_search);
+                    dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xDD1A1A1A));
+
+                    // 改标题（加上剧集信息）
+                    TextView titleView2 = dialog.findViewById(R.id.dm_search_title);
+                    if (titleView2 != null) {
+                        String epInfo2 = "";
+                        if (pendingDanmuTitle != null) {
+                            java.util.regex.Matcher epM2 = java.util.regex.Pattern.compile("[Ee](\\d+)").matcher(pendingDanmuTitle);
+                            if (epM2.find()) epInfo2 = " - 第" + epM2.group(1) + "集";
+                        }
+                        String name2 = data.getItemTV() != null ? data.getItemTV() : data.getItemTitle();
+                        titleView2.setText("选择剧集 - " + (name2 != null ? name2 : "") + epInfo2);
+                    }
+
+                    // 隐藏搜索栏
+                    ((View) dialog.findViewById(R.id.dm_search_input).getParent()).setVisibility(View.GONE);
+
+                    // 限制弹窗高度，避免底部按钮被裁切
+                    dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
+                            (int) (activity.getResources().getDisplayMetrics().heightPixels * 0.9f));
+
+                    // 填充剧集列表
+                    LinearLayout results2 = dialog.findViewById(R.id.dm_search_results);
+                    results2.removeAllViews();
+
+                    for (int ei = 0; ei < epCount; ei++) {
+                        int epIndex = ei;
+                        Button b = new Button(activity);
+                        b.setBackgroundResource(R.drawable.bg_search_item);
+                        b.setText(epLabels[ei]);
+                        b.setTextColor(0xFFEEEEEE);
+                        b.setPadding(16, 14, 16, 14);
+                        b.setAllCaps(false);
+                        b.setTextSize(14);
+                        b.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
+                        b.setSingleLine(true);
+                        b.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+                        b.setMarqueeRepeatLimit(-1);
+                        b.setFocusable(true);
+                        b.setSelected(true);
+                        b.setLayoutParams(new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                        ((LinearLayout.LayoutParams) b.getLayoutParams()).setMargins(0, 0, 0, 6);
+                        b.setOnClickListener(v -> {
+                            if (epIndex < epCount && epIds[epIndex] > 0) {
+                                if (animeId > 0 && animeName != null && data.getItemTV() != null && !data.getItemTV().isEmpty()) {
+                                    try {
+                                        String cacheJson = prefs.getString("danmu_match_cache", "{}");
+                                        JSONObject cache = new JSONObject(cacheJson);
+                                        cache.put(data.getItemTV(), animeId + "|" + animeName);
+                                        prefs.edit().putString("danmu_match_cache", cache.toString()).apply();
+                                    } catch (Exception ignored) {}
+                                }
+                                dialog.dismiss();
+                                loadDanmuByEp(epIds[epIndex], animeName != null ? animeName + " " + epLabels[epIndex] : null);
+                            } else {
+                                showDanmuStatus("弹幕: 无效剧集ID");
+                            }
+                        });
+                        results2.addView(b);
+                    }
+
+                    // 取消 → 返回搜索界面
+                    Button cancelBtn2 = dialog.findViewById(R.id.dm_search_cancel);
+                    cancelBtn2.setText("返回搜索");
+                    cancelBtn2.setOnClickListener(v -> {
+                        dialog.dismiss();
+                        showDanmuSearch();
+                    });
+
+                    dialog.show();
                 });
             } catch (Exception e) {
                 showDanmuStatus("弹幕失败: " + e.getMessage());
