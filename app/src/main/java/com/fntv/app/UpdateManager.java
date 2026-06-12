@@ -16,6 +16,12 @@ import java.net.URL;
 
 /** 升级管理器 — 检查更新、下载 APK、安装 */
 public class UpdateManager {
+    private boolean isTvDevice() {
+        android.app.UiModeManager uiModeManager = (android.app.UiModeManager) activity.getSystemService(android.content.Context.UI_MODE_SERVICE);
+        return uiModeManager != null
+                && uiModeManager.getCurrentModeType() == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;
+    }
+
 
     private final Activity activity;
     private final Button btnCheckUpdate;
@@ -237,8 +243,8 @@ public class UpdateManager {
 
     private void installApk(File apkFile, boolean testOnly) {
         try {
-            // 1. PackageInstaller Session API（测试模式跳过，走带 UI 的安装方式）
-            if (!testOnly && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            // 1. PackageInstaller Session API（测试模式跳过，TV 也跳过→静默安装无弹窗）
+            if (!testOnly && !isTvDevice() && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                 try {
                     android.content.pm.PackageInstaller installer = activity.getPackageManager().getPackageInstaller();
                     android.content.pm.PackageInstaller.SessionParams params =
