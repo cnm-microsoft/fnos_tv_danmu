@@ -1,7 +1,7 @@
 {
-    "versionCode": 14,
-    "versionName": "1.1.4",
-    "apkUrl": "https://ghfast.top/https://github.com/rgcaafe/fnos_tv_danmu/releases/download/v1.1.4/FNTV_release_v1.1.4_20260611_1003.apk",
-    "changelog": "1.修复播放器ui不显示的问题\n",
+    "versionCode": 15,
+    "versionName": "1.1.5",
+    "apkUrl": "https://gitee.com/coffee710/fntv/releases/download/v1.1.5/FNTV_release_v1.1.5_20260612_2006.apk",
+    "changelog": "1.新增长按2倍播放\n2.信息中添加音轨字幕选择\n3.UI优化",
     "forceUpdate": false
   }
