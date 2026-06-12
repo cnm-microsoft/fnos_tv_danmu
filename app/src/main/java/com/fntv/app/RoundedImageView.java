@@ -32,8 +32,8 @@ public class RoundedImageView extends ImageView {
     }
 
     @Override
-    protected void onDraw(Canvas canvas) {
+    public void draw(Canvas canvas) {
         if (clipPath != null) canvas.clipPath(clipPath);
-        super.onDraw(canvas);
+        super.draw(canvas);
     }
 }

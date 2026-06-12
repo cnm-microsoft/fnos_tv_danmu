@@ -9,6 +9,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Display;
@@ -65,6 +66,8 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean useHls = false;
     private int seekStep = 10000;
     private int streamBitrate = 0; // bps 来自 stream API
+    private Runnable seekCommitR;
+    private long pendingSeekMs = -1;
     private static final String TAG = "Player";
 
     private static final int[] RATIO_MODES = {0, 1, 2};
@@ -236,6 +239,8 @@ public class PlayerActivity extends AppCompatActivity {
                 btnLock.setVisibility(View.INVISIBLE);
             } else {
                 showCtrl(true);
+                // 解锁后焦点还给视频区域
+                playerView.requestFocus();
             }
         });
         btnCloseInfo.setOnClickListener(v -> { infoPanel.setVisibility(View.GONE); infoVis = false; });
@@ -335,19 +340,56 @@ public class PlayerActivity extends AppCompatActivity {
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
                 if (fromUser && player != null) {
-                    player.seekTo(p);
+                    // 立即更新 UI（时间显示）
                     tvTime.setText(FormatUtils.fmt(p) + " / " + FormatUtils.fmt(player.getDuration()));
-                    if (danmuManager != null) danmuManager.onSeekTo(p);
+                    if (tvSeekOverlay.getVisibility() == View.VISIBLE) {
+                        tvSeekOverlay.setText(FormatUtils.fmt(p) + " / " + FormatUtils.fmt(player.getDuration()));
+                    }
+                    // 防抖：停止操作 1s 后才真正 seek，避免按住时大量请求
+                    if (seekCommitR != null) handler.removeCallbacks(seekCommitR);
+                    pendingSeekMs = p;
+                    seekCommitR = () -> {
+                        if (player != null) {
+                            player.seekTo(p);
+                            if (danmuManager != null) danmuManager.onSeekTo(p);
+                        }
+                        pendingSeekMs = -1;
+                    };
+                    handler.postDelayed(seekCommitR, 1000);
                 }
             }
             @Override public void onStartTrackingTouch(SeekBar sb) {}
-            @Override public void onStopTrackingTouch(SeekBar sb) {}
+            @Override public void onStopTrackingTouch(SeekBar sb) {
+                // 触摸松开时立即执行最后的 seek
+                pendingSeekMs = -1;
+                if (seekCommitR != null) handler.removeCallbacks(seekCommitR);
+                if (player != null && sb.getProgress() >= 0) {
+                    player.seekTo(sb.getProgress());
+                    if (danmuManager != null) danmuManager.onSeekTo(sb.getProgress());
+                }
+            }
         });
 
         showCtrl(true);
         loadPlayInfo();
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         hideSystemUi();
+
+        // 控制栏隐藏时的进度时间浮层
+        tvSeekOverlay = new TextView(this);
+        tvSeekOverlay.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ((FrameLayout.LayoutParams) tvSeekOverlay.getLayoutParams()).gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        tvSeekOverlay.setPadding(32, 16, 32, 16);
+        tvSeekOverlay.setTextColor(Color.WHITE);
+        tvSeekOverlay.setTextSize(22);
+        tvSeekOverlay.setBackgroundColor(0x88000000);
+        tvSeekOverlay.setVisibility(View.GONE);
+        ((FrameLayout) findViewById(android.R.id.content)).addView(tvSeekOverlay);
+
+        // 初始焦点给视频区域，始终由 playerView 持有焦点
+        playerView.setFocusable(true);
+        playerView.requestFocus();
     }
 
     private void initPlayer() {
@@ -893,9 +935,13 @@ public class PlayerActivity extends AppCompatActivity {
     private void updateTime() {
         if (player == null) return;
         long cur = player.getCurrentPosition(), dur = player.getDuration();
-        tvTime.setText(FormatUtils.fmt(cur) + " / " + FormatUtils.fmt(dur));
-        seekBar.setMax((int) Math.max(dur, 1)); seekBar.setProgress((int) cur);
+        seekBar.setMax((int) Math.max(dur, 1));
         seekBar.setKeyProgressIncrement(5000); // 方向键每次 5 秒
+        // 防抖期间不覆盖 UI，避免抽搐（tvTime 和 seekBar 进度由 onProgressChanged 控制）
+        if (pendingSeekMs < 0) {
+            tvTime.setText(FormatUtils.fmt(cur) + " / " + FormatUtils.fmt(dur));
+            seekBar.setProgress((int) cur);
+        }
         if (danmuManager != null) danmuManager.setPlayTime(cur);
         // 实时监测片尾位置
         if (!outroSkipped && dur > 0) {
@@ -1085,20 +1131,16 @@ public class PlayerActivity extends AppCompatActivity {
             switch (k) {
                 case KeyEvent.KEYCODE_BACK:
                     if (infoVis) { toggleInfo(); return true; }
-                    if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || btnSkip.hasFocus() || topBar.hasFocus()) {
-                        controller.clearFocus();
+                    // 有控件焦点 → 清掉，自动回退到 playerView
+                    if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || btnSkip.hasFocus() || topBar.hasFocus() || btnBack.hasFocus()) {
                         topBar.clearFocus();
+                        controller.clearFocus();
                         btnDanmu.clearFocus();
                         btnLock.clearFocus();
                         return true;
                     }
-                    if (backPressedTime + 2000 > System.currentTimeMillis()) {
-                        restoreOrientation();
-                        finish();
-                    } else {
-                        backPressedTime = System.currentTimeMillis();
-                        Toast.makeText(this, "再按一次退出播放", Toast.LENGTH_SHORT).show();
-                    }
+                    // 无按钮焦点（playerView 或其它）→ 收起控制栏
+                    showCtrl(false);
                     return true;
                 // LEFT/RIGHT 由 SeekBar 自身处理（已设 keyProgressIncrement=5000）
                 case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
@@ -1130,10 +1172,36 @@ public class PlayerActivity extends AppCompatActivity {
                     }
                     return true;
                 case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
-                case KeyEvent.KEYCODE_DPAD_LEFT:
-                case KeyEvent.KEYCODE_DPAD_RIGHT:
                 case KeyEvent.KEYCODE_DPAD_UP:
-                    showCtrl(true); return true;
+                    showCtrl(true);
+                    btnPlayPause.requestFocus();
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                case KeyEvent.KEYCODE_DPAD_RIGHT: {
+                    long step = k == KeyEvent.KEYCODE_DPAD_LEFT ? -seekStep : seekStep;
+                    long cur = pendingSeekMs >= 0 ? pendingSeekMs : (player != null ? player.getCurrentPosition() : 0);
+                    long dur = player != null ? player.getDuration() : 0;
+                    long target = Math.max(0, Math.min(dur, cur + step));
+                    // 立即更新 UI
+                    String timeText = FormatUtils.fmt(target) + " / " + FormatUtils.fmt(dur);
+                    tvSeekOverlay.setText(timeText);
+                    tvSeekOverlay.setVisibility(View.VISIBLE);
+                    tvTime.setText(timeText);
+                    handler.removeCallbacks(hideSeekOverlayR);
+                    handler.postDelayed(hideSeekOverlayR, 2000);
+                    // 防抖：真正 seek 延迟到停止操作后
+                    pendingSeekMs = target;
+                    if (seekCommitR != null) handler.removeCallbacks(seekCommitR);
+                    seekCommitR = () -> {
+                        if (player != null) {
+                            player.seekTo(target);
+                            if (danmuManager != null) danmuManager.onSeekTo(target);
+                        }
+                        pendingSeekMs = -1;
+                    };
+                    handler.postDelayed(seekCommitR, 1000);
+                    return true;
+                }
                 case KeyEvent.KEYCODE_INFO: case KeyEvent.KEYCODE_MENU:
                     toggleInfo(); return true;
             }
@@ -1146,6 +1214,19 @@ public class PlayerActivity extends AppCompatActivity {
                 View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                         | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                         | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+    }
+
+    private TextView tvSeekOverlay;
+    private final Runnable hideSeekOverlayR = () -> { if (tvSeekOverlay != null) tvSeekOverlay.setVisibility(View.GONE); };
+
+    /** 控制栏隐藏时显示进度时间浮层 */
+    private void showSeekOverlay() {
+        if (player == null) return;
+        updateTime();
+        tvSeekOverlay.setText(FormatUtils.fmt(player.getCurrentPosition()) + " / " + FormatUtils.fmt(player.getDuration()));
+        tvSeekOverlay.setVisibility(View.VISIBLE);
+        handler.removeCallbacks(hideSeekOverlayR);
+        handler.postDelayed(hideSeekOverlayR, 2000);
     }
 
     private boolean isTvDevice() {

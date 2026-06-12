@@ -737,7 +737,7 @@ public class HomeActivity extends AppCompatActivity {
                             if (card instanceof ViewGroup) {
                                 View ch = ((ViewGroup) card).getChildAt(0);
                                 if (ch instanceof ImageView) {
-                                    int posterH = Math.min(550, (getResources().getDisplayMetrics().widthPixels / cols) * 16 / 9);
+                                    int posterH = Math.min(550, (getResources().getDisplayMetrics().widthPixels / cols) * 3 / 2);
                                     ch.setLayoutParams(new LinearLayout.LayoutParams(
                                             ViewGroup.LayoutParams.MATCH_PARENT, posterH));
                                 }
@@ -813,7 +813,7 @@ public class HomeActivity extends AppCompatActivity {
                 if (card instanceof ViewGroup) {
                     View ch = ((ViewGroup) card).getChildAt(0);
                     if (ch instanceof ImageView) {
-                        int posterH = Math.min(550, (getResources().getDisplayMetrics().widthPixels / cols) * 16 / 9);
+                        int posterH = Math.min(550, (getResources().getDisplayMetrics().widthPixels / cols) * 3 / 2);
                         ch.setLayoutParams(new LinearLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT, posterH));
                     }
@@ -920,6 +920,11 @@ public class HomeActivity extends AppCompatActivity {
             // 减去状态栏高度
             int sbId = getResources().getIdentifier("status_bar_height", "dimen", "android");
             if (sbId > 0) screenH -= getResources().getDimensionPixelSize(sbId);
+            // 减去导航栏高度（手机底部虚拟键）
+            int nbId = getResources().getIdentifier("navigation_bar_height", "dimen", "android");
+            if (nbId > 0) screenH -= getResources().getDimensionPixelSize(nbId);
+            // 减去底部菜单栏（tabBar 52dp + divider 1dp）
+            screenH -= (int)(53 * getResources().getDisplayMetrics().density);
             LinearLayout rootRow = new LinearLayout(this);
             rootRow.setOrientation(LinearLayout.HORIZONTAL);
             rootRow.setLayoutParams(new LinearLayout.LayoutParams(
@@ -928,7 +933,7 @@ public class HomeActivity extends AppCompatActivity {
             // 左侧海报（用卡片同款竖图 9:16），圆角处理
             String posterLand = makePosterUrl(item.poster);
             RoundedImageView posterL = new RoundedImageView(this);
-            int posterW = screenH * 9 / 16;
+            int posterW = screenH * 2 / 3;
             posterL.setLayoutParams(new LinearLayout.LayoutParams(posterW, screenH));
             posterL.setScaleType(ImageView.ScaleType.FIT_XY);
             posterL.setBackgroundColor(0xFF1A1A1A);

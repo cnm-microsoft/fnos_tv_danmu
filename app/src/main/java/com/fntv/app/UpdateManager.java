@@ -115,7 +115,7 @@ public class UpdateManager {
                 Log.d(TAG, "远程: v" + remoteVersion + " 本地: v" + currentVersionCode + " 来源: " + usedUrl);
 
                 final boolean isTestInstall = BuildConfig.DEBUG && remoteVersion <= currentVersionCode;
-                if (remoteVersion < currentVersionCode && !isTestInstall) {
+                if (remoteVersion <= currentVersionCode && !isTestInstall) {
                     activity.runOnUiThread(() -> {
                         Toast.makeText(activity, "已是最新版本", Toast.LENGTH_SHORT).show();
                         resetBtn();
