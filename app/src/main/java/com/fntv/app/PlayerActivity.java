@@ -81,6 +81,7 @@ public class PlayerActivity extends AppCompatActivity {
     private long streamFileSize = 0;
     private int streamDuration = 0; // 秒
     private String streamContainer = "";
+    private String streamResolution = "";
     private boolean hdrNotified = false; // HDR 已提示过一次
     private boolean firstReady = true;   // 首次进入 READY（用于控制初始 UI 显示）
     private java.util.List<StreamResponse.AudioStreamInfo> streamAudioTracks;
@@ -279,6 +280,7 @@ public class PlayerActivity extends AppCompatActivity {
                 streamDuration = info.duration;
                 streamFileSize = info.fileSize;
                 streamContainer = info.container;
+                streamResolution = info.resolution != null ? info.resolution : "";
                 streamAudioTracks = info.audioTracks;
                 streamSubtitleTracks = info.subtitleTracks;
                 if (streamVCodec.isEmpty() || streamContainer.isEmpty()) {
@@ -461,7 +463,7 @@ public class PlayerActivity extends AppCompatActivity {
                 if (s == Player.STATE_READY) {
                     if (!seeked && seekTs > 0) { player.seekTo(seekTs); seeked = true; }
                     startSave(); updateTime();
-                    if (firstReady) { showCtrl(true); firstReady = false; }
+                    if (firstReady) { saveProgress(); showCtrl(true); firstReady = false; }
                     btnPlayPause.setText(player.isPlaying() ? "暂停" : "播放");
                     if (danmuManager != null) danmuManager.onPlayerReady();
                     // HDR 检测（延时等格式就绪）
@@ -544,13 +546,22 @@ public class PlayerActivity extends AppCompatActivity {
     private void loadPlayInfo() {
         hdrNotified = false;
         Map<String, String> b = new HashMap<>(); b.put("item_guid", itemGuid);
+        Log.d(TAG, "play/info 请求: " + new com.google.gson.Gson().toJson(b));
         apiManager.getApi().getPlayInfo(b).enqueue(new retrofit2.Callback<ApiResponse<PlayInfoResponse>>() {
             @Override public void onResponse(retrofit2.Call<ApiResponse<PlayInfoResponse>> call,
                                              retrofit2.Response<ApiResponse<PlayInfoResponse>> r) {
                 if (r.isSuccessful() && r.body() != null && r.body().code == 0 && r.body().data != null) {
                     PlayInfoResponse info = r.body().data;
                     mediaGuid = info.mediaGuid; videoGuid = info.videoGuid; audioGuid = info.audioGuid;
+                    if (info.guid != null && !info.guid.isEmpty()) itemGuid = info.guid;
                     if (info.parentGuid != null && !info.parentGuid.isEmpty()) parentGuid = info.parentGuid;
+                    Log.d(TAG, "play/info 返回: type=" + info.getClass().getSimpleName()
+                            + " guid=" + info.guid
+                            + " mediaGuid=" + info.mediaGuid
+                            + " audioGuid='" + info.audioGuid + "'"
+                            + " videoGuid=" + info.videoGuid
+                            + " subtitleGuid=" + info.subtitleGuid
+                            + " raw=" + new com.google.gson.Gson().toJson(info));
                     // 从 intent 的 parent_guid 兜底（详情页传递的）
                     if (parentGuid == null || parentGuid.isEmpty()) {
                         parentGuid = getIntent().getStringExtra("parent_guid");
@@ -1096,11 +1107,21 @@ public class PlayerActivity extends AppCompatActivity {
         r.put("video_guid", videoGuid != null ? videoGuid : "");
         r.put("audio_guid", audioGuid != null ? audioGuid : "");
         r.put("subtitle_guid", subtitleGuid != null ? subtitleGuid : "_no_display_");
-        r.put("resolution", resolution != null ? resolution : ""); r.put("bitrate", 0);
+        r.put("resolution", !streamResolution.isEmpty() ? streamResolution : (resolution != null ? resolution : "")); r.put("bitrate", streamBitrate);
         r.put("ts", ts); r.put("duration", itemDuration > 0 ? itemDuration : player.getDuration()/1000);
+        apiManager.setReferer(baseUrl + "/v/video/" + itemGuid + "?media_guid=" + mediaGuid);
+        Log.d(TAG, "recordPlayStatus 请求: " + (r != null ? new com.google.gson.Gson().toJson(r) : "null"));
         apiManager.getApi().recordPlayStatus(r).enqueue(new retrofit2.Callback<ApiResponse<Object>>() {
-            @Override public void onResponse(retrofit2.Call<ApiResponse<Object>> call, retrofit2.Response<ApiResponse<Object>> response) {}
-            @Override public void onFailure(retrofit2.Call<ApiResponse<Object>> call, Throwable t) {}
+            @Override public void onResponse(retrofit2.Call<ApiResponse<Object>> call, retrofit2.Response<ApiResponse<Object>> response) {
+                String respBody = response.body() != null
+                        ? "code=" + response.body().code + " msg='" + response.body().msg + "' data=" + response.body().data
+                        : "nullBody";
+                Log.d(TAG, "recordPlayStatus 响应: HTTP " + response.code() + " " + respBody
+                        + " (raw: " + (response.body() != null ? new com.google.gson.Gson().toJson(response.body()) : "null") + ")");
+            }
+            @Override public void onFailure(retrofit2.Call<ApiResponse<Object>> call, Throwable t) {
+                Log.e(TAG, "recordPlayStatus 失败: " + t.getMessage());
+            }
         });
     }
 
@@ -1260,6 +1281,7 @@ public class PlayerActivity extends AppCompatActivity {
     }
     @Override protected void onStop() { super.onStop(); saveProgress(); if (player != null) player.setPlayWhenReady(false); }
     @Override protected void onDestroy() {
+        saveProgress();
         super.onDestroy(); handler.removeCallbacksAndMessages(null);
         if (danmuManager != null) { danmuManager.destroy(); }
         if (player != null) { player.release(); player = null; }

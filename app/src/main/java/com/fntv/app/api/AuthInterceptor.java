@@ -12,6 +12,7 @@ import java.nio.charset.Charset;
  */
 public class AuthInterceptor implements Interceptor {
     private String token;
+    private String referer;
 
     public void setToken(String token) {
         this.token = token;
@@ -19,6 +20,10 @@ public class AuthInterceptor implements Interceptor {
 
     public String getToken() {
         return token;
+    }
+
+    public void setReferer(String referer) {
+        this.referer = referer;
     }
 
     @Override
@@ -42,6 +47,10 @@ public class AuthInterceptor implements Interceptor {
 
         if (token != null) {
             requestBuilder.header("Authorization", token);
+        }
+
+        if (referer != null && !referer.isEmpty() && urlPath.contains("play/record")) {
+            requestBuilder.header("Referer", referer);
         }
 
         return chain.proceed(requestBuilder.build());

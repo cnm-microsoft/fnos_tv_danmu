@@ -70,6 +70,9 @@ public interface FnApiService {
     @POST("api/v1/play/record")
     Call<ApiResponse<Object>> recordPlayStatus(@Body Object req);
 
+    @GET("api/v1/play/list")
+    Call<ApiResponse<List<PlayListItem>>> getPlayList();
+
     // ========== 字幕 ==========
     @GET("api/v1/subtitle/dl/{id}")
     Call<ResponseBody> downloadSubtitle(@Path("id") String id);

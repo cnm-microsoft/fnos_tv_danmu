@@ -53,6 +53,7 @@ public class CloudStreamManager {
         public int bitrate, width, height, bitDepth, duration;
         public long fileSize;
         public String vCodec, vProfile, vPixFmt, vColor, vFps, container;
+        public String resolution;
         public boolean vHdr;
         public List<StreamResponse.AudioStreamInfo> audioTracks;
         public List<StreamResponse.SubtitleStreamInfo> subtitleTracks;
@@ -270,6 +271,15 @@ public class CloudStreamManager {
                                     });
                                 }
 
+                                // 取 resolution：直链优先，代理取 qualities[0]
+                                if (sd.directLinkQualities != null && qualityIndex < sd.directLinkQualities.size()) {
+                                    info.resolution = sd.directLinkQualities.get(qualityIndex).resolution;
+                                    if (sd.directLinkQualities.get(qualityIndex).bitrate > 0)
+                                        info.bitrate = sd.directLinkQualities.get(qualityIndex).bitrate;
+                                } else if (sd.qualities != null && !sd.qualities.isEmpty()) {
+                                    info.resolution = sd.qualities.get(0).resolution;
+                                    info.bitrate = sd.qualities.get(0).bitrate;
+                                }
                                 // 回调 Activity 更新显示信息
                                 cb.onStreamInfoParsed(info);
                             } else {

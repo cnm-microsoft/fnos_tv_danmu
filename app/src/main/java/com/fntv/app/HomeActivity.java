@@ -169,6 +169,7 @@ public class HomeActivity extends AppCompatActivity {
             loadingPreviews = false;
             showOverview();
             loadAllPreviews();
+            loadContinueWatching();
         } else if (currentTab == 0 && !overviewBuilt && showingOverview) {
             loadOverview();
         }
@@ -232,6 +233,7 @@ public class HomeActivity extends AppCompatActivity {
                     Log.d("Overview", "loaded " + mediaLibraries.size() + " libraries");
                     showOverview();
                     loadAllPreviews();
+                    loadContinueWatching();
                 } else {
                     tvMoviesLoading.setVisibility(View.GONE);
                 }
@@ -254,16 +256,13 @@ public class HomeActivity extends AppCompatActivity {
         showingOverview = true;
         overviewBuilt = true;
 
-        // 继续观看
-        List<WatchRecord> watching = new ArrayList<>();
-        for (WatchRecord r : watchHistory.getTop(20)) {
-            if (!r.isNearlyFinished()) watching.add(r);
-        }
-
-        // 继续观看（最顶部）
-        if (!watching.isEmpty()) {
-            addContinueWatching(moviesContainer, watching, 0);
-        }
+        // 继续观看（最顶部，占位，稍后由 loadContinueWatching 填充）
+        LinearLayout continueWatchingBox = new LinearLayout(this);
+        continueWatchingBox.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        continueWatchingBox.setOrientation(LinearLayout.VERTICAL);
+        continueWatchingBox.setTag("continue_watching");
+        moviesContainer.addView(continueWatchingBox);
 
         // 各媒体库：标题 + 预览容器
         java.util.ArrayList<Integer> viewAllIds = new java.util.ArrayList<>();
@@ -287,17 +286,7 @@ public class HomeActivity extends AppCompatActivity {
             moviesContainer.addView(makeSpacer(16));
         }
 
-        // 继续观看卡片 ↓ 第一个查看全部
-        int firstViewAllId = !viewAllIds.isEmpty() ? viewAllIds.get(0) : -1;
-        if (firstViewAllId > 0 && !watching.isEmpty()) {
-            for (int wi = 0; wi < moviesContainer.getChildCount(); wi++) {
-                View child = moviesContainer.getChildAt(wi);
-                if (child instanceof HorizontalScrollView) {
-                    setFocusDownInContainer((ViewGroup) child, firstViewAllId);
-                    break;
-                }
-            }
-        }
+        // 继续观看卡片 ↓ 第一个查看全部（在 loadContinueWatching 中设置焦点）
 
         if (moviesContainer.getChildCount() == 0) {
             TextView e = new TextView(this);
@@ -328,7 +317,7 @@ public class HomeActivity extends AppCompatActivity {
                             || response.body().data.list.isEmpty()) return;
                     // 取前6个填到预览容器
                     List<PlayListItem> items = response.body().data.list;
-                    if (items.size() > 6) items = items.subList(0, 6);
+                    if (items.size() > 20) items = items.subList(0, 20);
                     fillPreview(guid, items);
                 }
                 @Override public void onFailure(Call<ApiResponse<ItemListResponse>> call, Throwable t) {}
@@ -411,7 +400,14 @@ public class HomeActivity extends AppCompatActivity {
     // ==================== 继续观看 ====================
 
 
-    private void addContinueWatching(LinearLayout cont, List<WatchRecord> records, int viewAllId) {
+    private void addContinueWatchingApi(LinearLayout cont, List<PlayListItem> items, int viewAllId) {
+        if (items == null || items.isEmpty()) {
+            cont.setVisibility(View.GONE);
+            return;
+        }
+        cont.removeAllViews();
+        cont.setVisibility(View.VISIBLE);
+
         TextView h = new TextView(this);
         h.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -431,13 +427,12 @@ public class HomeActivity extends AppCompatActivity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(10, 8, 10, 8);
 
-        for (WatchRecord r : records) {
-            View card = makeWatchCard(r);
+        for (PlayListItem item : items) {
+            View card = makeContinueCard(item);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     220, 380);
             lp.setMargins(10, 0, 10, 0);
             card.setLayoutParams(lp);
-            // 按↓强制到"查看全部"按钮
             if (viewAllId > 0) card.setNextFocusDownId(viewAllId);
             row.addView(card);
         }
@@ -455,8 +450,17 @@ public class HomeActivity extends AppCompatActivity {
         cont.addView(makeSpacer(6));
     }
 
+    private String formatContinueTitle(PlayListItem item) {
+        if (item.tvTitle != null && !item.tvTitle.isEmpty()) {
+            StringBuilder sb = new StringBuilder(item.tvTitle);
+            if (item.seasonNumber > 0) sb.append(" 第").append(item.seasonNumber).append("季");
+            if (item.episodeNumber > 0) sb.append(item.episodeNumber).append("集");
+            return sb.toString();
+        }
+        return item.title != null ? item.title : "";
+    }
 
-    private View makeWatchCard(WatchRecord record) {
+    private View makeContinueCard(PlayListItem item) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setBackgroundResource(R.drawable.bg_media_card);
@@ -469,7 +473,7 @@ public class HomeActivity extends AppCompatActivity {
         poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
         poster.setCornerRadius(10);
         poster.setBackgroundColor(0xFF333333);
-        String imgUrl = makePosterUrl(record.poster);
+        String imgUrl = makePosterUrl(item.poster);
         if (imgUrl != null) { poster.setTag(imgUrl); }
         card.addView(poster);
 
@@ -479,8 +483,8 @@ public class HomeActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, 5));
         pBar.setOrientation(LinearLayout.HORIZONTAL);
         pBar.setWeightSum(100);
-        int pct = Math.max(0, Math.min(100, record.getProgressPercent()));
-        Log.d("Overview", "进度条: ts=" + record.ts + " dur=" + record.duration + " pct=" + pct + " " + record.getDisplayTitle());
+        int pct = item.duration > 0 ? Math.max(0, Math.min(100, (int)(item.ts * 100 / item.duration))) : 0;
+        Log.d("Overview", "进度条: ts=" + item.ts + " dur=" + item.duration + " pct=" + pct + " " + formatContinueTitle(item));
         if (pct > 0) {
             View f = new View(HomeActivity.this);
             f.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, pct));
@@ -506,24 +510,62 @@ public class HomeActivity extends AppCompatActivity {
         title.setTextColor(0xFFEEEEEE);
         title.setGravity(Gravity.CENTER_VERTICAL);
         title.setPadding(4, 0, 4, 0);
-        title.setText(record.getDisplayTitle());
+        title.setText(formatContinueTitle(item));
+        title.setFocusable(false);
         card.addView(title);
 
-        // 跑马灯：一直滚动
-        title.setSelected(true);
+        // 跑马灯：强制选中，始终滚动
+        title.post(() -> title.setSelected(true));
 
-        // 点击直接播放（跳转到历史进度）
-        final WatchRecord rec = record;
+        // 点击直接播放
+        final PlayListItem fi = item;
         card.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                launchPlayer(rec.guid, rec.title, rec.tvTitle != null ? rec.tvTitle : "",
-                        rec.episodeNumber, rec.poster, rec.libraryName,
-                        rec.ts, rec.duration, rec.parentGuid);
+                launchPlayer(fi.guid, fi.title, fi.tvTitle != null ? fi.tvTitle : "",
+                        fi.episodeNumber, fi.poster, fi.getCategoryLabel(),
+                        fi.ts, fi.duration, fi.parentGuid);
             }
         });
 
         return card;
+    }
+
+    private void loadContinueWatching() {
+        apiManager.getApi().getPlayList().enqueue(new Callback<ApiResponse<List<PlayListItem>>>() {
+            @Override
+            public void onResponse(Call<ApiResponse<List<PlayListItem>>> call,
+                                   Response<ApiResponse<List<PlayListItem>>> response) {
+                if (!response.isSuccessful() || response.body() == null || response.body().code != 0
+                        || response.body().data == null || response.body().data.isEmpty()) return;
+                // 找到继续观看占位容器
+                for (int i = 0; i < moviesContainer.getChildCount(); i++) {
+                    View v = moviesContainer.getChildAt(i);
+                    if (v instanceof LinearLayout && "continue_watching".equals(v.getTag())) {
+                        final int firstViewAllId;
+                        // 查找第一个查看全部按钮
+                        int fva = -1;
+                        for (int j = 0; j < moviesContainer.getChildCount(); j++) {
+                            View cv = moviesContainer.getChildAt(j);
+                            if (cv instanceof ViewGroup) {
+                                for (int ci = 0; ci < ((ViewGroup) cv).getChildCount(); ci++) {
+                                    View child = ((ViewGroup) cv).getChildAt(ci);
+                                    if (child instanceof Button && child.isFocusable()) {
+                                        fva = child.getId();
+                                        break;
+                                    }
+                                }
+                                if (fva > 0) break;
+                            }
+                        }
+                        addContinueWatchingApi((LinearLayout) v, response.body().data, fva);
+                        break;
+                    }
+                }
+            }
+            @Override
+            public void onFailure(Call<ApiResponse<List<PlayListItem>>> call, Throwable t) {}
+        });
     }
 
 
@@ -1137,7 +1179,7 @@ public class HomeActivity extends AppCompatActivity {
         final int orEp = item.episodeNumber;
         final String pPoster = item.poster;
         final String pCat = item.getCategoryLabel();
-        final long pTs = historyRecord != null ? historyRecord.ts : (item.ts > 0 ? item.ts : 0);
+        final long pTs = info.ts > 0 ? info.ts : (historyRecord != null ? historyRecord.ts : (item.ts > 0 ? item.ts : 0));
         // 总时长优先用 play/info 接口的 duration（它最准确），其次是 historyRecord、runtime 转秒、item.duration
         long rawDur = info.item != null && info.item.duration > 0 ? info.item.duration
                 : (historyRecord != null ? historyRecord.duration : 0);
@@ -1153,7 +1195,7 @@ public class HomeActivity extends AppCompatActivity {
             watchHistory.put(historyRecord);
         }
         final int pEp = historyRecord != null ? historyRecord.episodeNumber : orEp;
-        final int progressPct = historyRecord != null ? Math.max(0, Math.min(100, historyRecord.getProgressPercent())) : 0;
+        final int progressPct = pDur > 0 ? Math.max(0, Math.min(100, (int)(pTs * 100 / pDur))) : 0;
         final String pParentGuid = info.parentGuid != null && !info.parentGuid.isEmpty() ? info.parentGuid : item.parentGuid;
 
         Log.d("Detail", "pParentGuid=" + pParentGuid + " info.parentGuid=" + (info.parentGuid != null ? info.parentGuid : "null") + " item.parentGuid=" + (item.parentGuid != null ? item.parentGuid : "null"));
@@ -1220,7 +1262,7 @@ public class HomeActivity extends AppCompatActivity {
                 playBtn.setScaleY(1.0f);
             }
         });
-        if (historyRecord != null) {
+        if (pTs > 0) {
             playBtn.setTextSize(16);
             playBtn.setText("▶  继续播放\n" + formatDuration(pTs) + " / " + formatDuration(pDur));
         } else {
