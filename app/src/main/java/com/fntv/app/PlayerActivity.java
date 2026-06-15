@@ -1095,13 +1095,6 @@ public class PlayerActivity extends AppCompatActivity {
         if (player == null || player.getPlaybackState() != Player.STATE_READY) return;
         long p = player.getCurrentPosition(); if (p <= 0) return;
         long ts = p / 1000;
-        com.fntv.app.model.WatchHistoryManager whm = new com.fntv.app.model.WatchHistoryManager(
-                getSharedPreferences("fntv_prefs", MODE_PRIVATE));
-        int ep = getIntent().getIntExtra("episode_number", 0);
-        long actualDuration = itemDuration > 0 ? itemDuration : (player.getDuration() / 1000);
-        if (actualDuration <= 0) actualDuration = 0;
-        whm.put(new com.fntv.app.model.WatchRecord(itemGuid, itemTitle, itemTV, ep,
-                itemPoster, itemCategory, parentGuid, ts, actualDuration));
         Map<String, Object> r = new HashMap<>();
         r.put("item_guid", itemGuid); r.put("media_guid", mediaGuid);
         r.put("video_guid", videoGuid != null ? videoGuid : "");

@@ -18,8 +18,6 @@ import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
 import com.fntv.app.api.FnApiManager;
 import com.fntv.app.api.model.*;
-import com.fntv.app.model.WatchHistoryManager;
-import com.fntv.app.model.WatchRecord;
 import com.fntv.app.util.SimpleImageLoader;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,7 +41,6 @@ public class HomeActivity extends AppCompatActivity {
 
     private int currentTab = 0;
     private final List<MediaDbItem> mediaLibraries = new ArrayList<>();
-    private WatchHistoryManager watchHistory;
     private boolean showingOverview = true;
     private boolean showingEpisodes = false;
     private boolean loadingPreviews = false;
@@ -108,8 +105,6 @@ public class HomeActivity extends AppCompatActivity {
         } else if (lastHost.isEmpty() && !baseUrl.isEmpty()) {
             prefs.edit().putString("last_host", baseUrl).apply();
         }
-        watchHistory = new WatchHistoryManager(prefs);
-
         initViews();
         setupTabs();
         setupSettings();
@@ -886,7 +881,6 @@ public class HomeActivity extends AppCompatActivity {
 
     private void launchPlayer(String guid, String title, String tvTitle, int epNum,
                               String poster, String cat, long ts, long dur, String parentGuid) {
-        watchHistory.put(new WatchRecord(guid, title, tvTitle, epNum, poster, cat, parentGuid, ts, dur));
         Intent intent = new Intent(this, PlayerActivity.class);
         intent.putExtra("guid", guid);
         intent.putExtra("title", title);
@@ -1161,45 +1155,25 @@ public class HomeActivity extends AppCompatActivity {
             content.addView(makeSpacer(12));
         }
 
-        // 查找历史观看记录
-        final String seriesKey = "Episode".equals(info.type) && info.item != null && info.item.tvTitle != null
-                ? info.item.tvTitle : item.title;
-        WatchRecord historyRecord = null;
-        for (WatchRecord wr : watchHistory.getTop(50)) {
-            if (seriesKey.equals(wr.getDedupKey())) {
-                historyRecord = wr;
-                break;
-            }
-        }
-
-        // 查找历史观看记录
+        // 播放时间优先用 play/info 接口返回的 ts
         final String pGuid = item.guid;
         final String pTitle = item.title;
         final String pTV = info.item != null && info.item.tvTitle != null ? info.item.tvTitle : "";
-        final int orEp = item.episodeNumber;
         final String pPoster = item.poster;
         final String pCat = item.getCategoryLabel();
-        final long pTs = info.ts > 0 ? info.ts : (historyRecord != null ? historyRecord.ts : (item.ts > 0 ? item.ts : 0));
-        // 总时长优先用 play/info 接口的 duration（它最准确），其次是 historyRecord、runtime 转秒、item.duration
-        long rawDur = info.item != null && info.item.duration > 0 ? info.item.duration
-                : (historyRecord != null ? historyRecord.duration : 0);
+        final long pTs = info.ts > 0 ? info.ts : (item.ts > 0 ? item.ts : 0);
+        // 总时长优先用 play/info 接口的 duration，其次是 runtime 转秒、item.duration
+        long rawDur = info.item != null && info.item.duration > 0 ? info.item.duration : 0;
         if (rawDur <= 0 && info.item != null && info.item.runtime > 0) rawDur = info.item.runtime * 60L;
         if (rawDur <= 0) rawDur = item.duration;
         final long pDur = rawDur;
 
-        // 用 play/info 的正确时长修正 WatchRecord，确保首页进度条使用精确值
-        if (historyRecord != null && info.item != null && info.item.duration > 0
-                && historyRecord.duration != info.item.duration) {
-            Log.d("Detail", "修正 WatchRecord 时长: " + historyRecord.duration + " → " + info.item.duration);
-            historyRecord.duration = info.item.duration;
-            watchHistory.put(historyRecord);
-        }
-        final int pEp = historyRecord != null ? historyRecord.episodeNumber : orEp;
+        final int pEp = item.episodeNumber;
         final int progressPct = pDur > 0 ? Math.max(0, Math.min(100, (int)(pTs * 100 / pDur))) : 0;
         final String pParentGuid = info.parentGuid != null && !info.parentGuid.isEmpty() ? info.parentGuid : item.parentGuid;
 
         Log.d("Detail", "pParentGuid=" + pParentGuid + " info.parentGuid=" + (info.parentGuid != null ? info.parentGuid : "null") + " item.parentGuid=" + (item.parentGuid != null ? item.parentGuid : "null"));
-        Log.d("Detail", "继续播放: historyRecord=" + (historyRecord != null ? "存在(dur=" + historyRecord.duration + ")" : "null")
+        Log.d("Detail", "继续播放: info.ts=" + info.ts + " pTs=" + pTs
                 + " info.item.duration=" + (info.item != null ? info.item.duration : "null")
                 + " info.item.runtime=" + (info.item != null ? info.item.runtime : "null")
                 + " item.duration=" + item.duration + " → pDur=" + pDur + " pTs=" + pTs);
@@ -1281,8 +1255,7 @@ public class HomeActivity extends AppCompatActivity {
         // Episode 类型 → 加载剧集列表，加载后用剧集列表里的精确时长更新播放按钮
         if ("Episode".equals(info.type) && info.parentGuid != null && !info.parentGuid.isEmpty()) {
             content.addView(makeSpacer(16));
-            String historyEpGuid = historyRecord != null ? historyRecord.guid : null;
-            loadEpisodes(content, info.parentGuid, item, playBtn, pTs, historyEpGuid);
+            loadEpisodes(content, info.parentGuid, item, playBtn, pTs, null);
         }
 
     }
