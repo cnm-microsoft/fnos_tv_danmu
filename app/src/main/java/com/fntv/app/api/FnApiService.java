@@ -24,7 +24,7 @@ public interface FnApiService {
     Call<ApiResponse<Object>> getVersion();
 
     @POST("api/v1/auth")
-    Call<ApiResponse<Object>> auth(@Body Object req);
+    Call<ApiResponse<FnAuthResponse>> auth(@Body Object req);
 
     @POST("api/v1/logout")
     Call<ApiResponse<Object>> logout();

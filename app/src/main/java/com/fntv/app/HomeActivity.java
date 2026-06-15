@@ -1670,10 +1670,11 @@ public class HomeActivity extends AppCompatActivity {
 
 
     private void logout() {
-        prefs.edit().remove("pass").putBoolean("remember", false).apply();
         apiManager.setToken(null);
         Toast.makeText(this, "已退出", Toast.LENGTH_SHORT).show();
-        startActivity(new Intent(this, MainActivity.class));
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.putExtra("skip_auto_login", true);
+        startActivity(intent);
         finish();
     }
 
