@@ -327,6 +327,14 @@ public class PlayerActivity extends AppCompatActivity {
         cloudStreamManager.initFromPrefs();
         cloudStreamManager.setPlayer(player);
 
+        // 顶部栏焦点链
+        btnCloudMode.setNextFocusLeftId(btnBack.getId());
+        btnCloudMode.setNextFocusDownId(btnLock.getId());
+        btnBack.setNextFocusRightId(btnCloudMode.getId());
+        btnBack.setNextFocusDownId(btnDanmu.getId());
+        btnDanmu.setNextFocusUpId(btnBack.getId());
+        btnLock.setNextFocusUpId(btnCloudMode.getId());
+
         // 音轨/字幕选择按钮
         Button btnAudioTrack = findViewById(R.id.btnAudioTrack);
         Button btnSubtitleTrack = findViewById(R.id.btnSubtitleTrack);
@@ -866,11 +874,25 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void toggleInfo() {
-        infoVis = !infoVis; infoPanel.setVisibility(infoVis ? View.VISIBLE : View.GONE);
+        infoVis = !infoVis;
+        infoPanel.setVisibility(infoVis ? View.VISIBLE : View.GONE);
         if (infoVis) {
+            // 信息面板打开时，禁止焦点跳到其他控件
+            ((ViewGroup) controller).setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            ((ViewGroup) topBar).setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            // 信息面板内焦点循环
+            View btnAudioTrack = findViewById(R.id.btnAudioTrack);
+            View btnSubtitleTrack = findViewById(R.id.btnSubtitleTrack);
+            if (btnAudioTrack != null) btnAudioTrack.setNextFocusUpId(btnCloseInfo.getId());
+            if (btnSubtitleTrack != null) btnSubtitleTrack.setNextFocusUpId(btnCloseInfo.getId());
+            btnCloseInfo.setNextFocusDownId(btnAudioTrack != null ? btnAudioTrack.getId()
+                    : (btnSubtitleTrack != null ? btnSubtitleTrack.getId() : btnCloseInfo.getId()));
             updateInfo();
             btnCloseInfo.post(() -> btnCloseInfo.requestFocus());
         } else {
+            // 关闭时恢复焦点导航
+            ((ViewGroup) controller).setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+            ((ViewGroup) topBar).setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
             btnInfo.requestFocus();
         }
     }
