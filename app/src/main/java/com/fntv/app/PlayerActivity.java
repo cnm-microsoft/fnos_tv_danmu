@@ -880,12 +880,25 @@ public class PlayerActivity extends AppCompatActivity {
             // 信息面板打开时，禁止焦点跳到其他控件
             ((ViewGroup) controller).setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
             ((ViewGroup) topBar).setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
-            // 信息面板内焦点循环
+            // 信息面板内焦点全方向循环（防止方向键逃出面板）
             View btnAudioTrack = findViewById(R.id.btnAudioTrack);
             View btnSubtitleTrack = findViewById(R.id.btnSubtitleTrack);
-            if (btnAudioTrack != null) btnAudioTrack.setNextFocusUpId(btnCloseInfo.getId());
-            if (btnSubtitleTrack != null) btnSubtitleTrack.setNextFocusUpId(btnCloseInfo.getId());
-            btnCloseInfo.setNextFocusDownId(btnAudioTrack != null ? btnAudioTrack.getId()
+            if (btnAudioTrack != null) {
+                btnAudioTrack.setNextFocusUpId(btnCloseInfo.getId());
+                btnAudioTrack.setNextFocusLeftId(btnCloseInfo.getId());
+                btnAudioTrack.setNextFocusRightId(btnSubtitleTrack != null ? btnSubtitleTrack.getId() : btnCloseInfo.getId());
+            }
+            if (btnSubtitleTrack != null) {
+                btnSubtitleTrack.setNextFocusUpId(btnCloseInfo.getId());
+                btnSubtitleTrack.setNextFocusLeftId(btnAudioTrack != null ? btnAudioTrack.getId() : btnCloseInfo.getId());
+                btnSubtitleTrack.setNextFocusRightId(btnCloseInfo.getId());
+            }
+            int closeDown = btnAudioTrack != null ? btnAudioTrack.getId()
+                    : (btnSubtitleTrack != null ? btnSubtitleTrack.getId() : btnCloseInfo.getId());
+            btnCloseInfo.setNextFocusDownId(closeDown);
+            btnCloseInfo.setNextFocusLeftId(btnSubtitleTrack != null ? btnSubtitleTrack.getId()
+                    : (btnAudioTrack != null ? btnAudioTrack.getId() : btnCloseInfo.getId()));
+            btnCloseInfo.setNextFocusRightId(btnAudioTrack != null ? btnAudioTrack.getId()
                     : (btnSubtitleTrack != null ? btnSubtitleTrack.getId() : btnCloseInfo.getId()));
             updateInfo();
             btnCloseInfo.post(() -> btnCloseInfo.requestFocus());
@@ -934,7 +947,9 @@ public class PlayerActivity extends AppCompatActivity {
         handler.postDelayed(hideC, 5000);
     }
     private final Runnable hideC = () -> {
-        if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus() || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || btnSkip.hasFocus() || topBar.hasFocus()) {
+        // 焦点在控制器按钮上时推迟隐藏，infoPanel/顶栏/无焦点时正常隐藏
+        if (controller.hasFocus() || btnDanmu.hasFocus() || btnLock.hasFocus()
+                || btnCloudMode.hasFocus() || btnBrightness.hasFocus() || btnSkip.hasFocus()) {
             resetHideTimer();
             return;
         }
@@ -963,6 +978,8 @@ public class PlayerActivity extends AppCompatActivity {
         View btnSubtitleTrack = findViewById(R.id.btnSubtitleTrack);
         if (btnAudioTrack != null) btnAudioTrack.setOnFocusChangeListener(l);
         if (btnSubtitleTrack != null) btnSubtitleTrack.setOnFocusChangeListener(l);
+        btnCloseInfo.setOnFocusChangeListener(l);
+        infoPanel.setOnFocusChangeListener(l);
     };
 
     private void updateTime() {
@@ -1187,7 +1204,8 @@ public class PlayerActivity extends AppCompatActivity {
                     }
                     togglePlay(); return true;
                 case KeyEvent.KEYCODE_DPAD_UP:
-                    if (btnDanmu.hasFocus() || btnLock.hasFocus() || topBar.hasFocus()) {
+                    // 顶栏按上→收起，其余情况交给系统焦点导航
+                    if (topBar.hasFocus() || btnCloudMode.hasFocus()) {
                         showCtrl(false);
                         return true;
                     }
