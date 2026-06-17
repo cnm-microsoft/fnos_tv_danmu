@@ -1,7 +1,7 @@
 {
-    "versionCode": 15,
-    "versionName": "1.1.5",
-    "apkUrl": "https://gitee.com/coffee710/fntv/releases/download/v1.1.5/FNTV_release_v1.1.5_20260612_2017.apk",
-    "changelog": "1.新增长按2倍播放\n2.信息中添加音轨字幕选择\n3.UI优化",
+    "versionCode": 16,
+    "versionName": "1.1.6",
+    "apkUrl": "https://gitee.com/coffee710/fntv/releases/download/v1.1.6/FNTV_release_v1.1.6_20260617_2219.apk",
+    "changelog": "1.播放历史和飞牛同步\n2.新增FN ID登录\n",
     "forceUpdate": false
   }
