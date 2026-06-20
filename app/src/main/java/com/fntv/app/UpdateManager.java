@@ -243,48 +243,7 @@ public class UpdateManager {
 
     private void installApk(File apkFile, boolean testOnly) {
         try {
-            // 1. PackageInstaller Session API（测试模式跳过，TV 也跳过→静默安装无弹窗）
-            if (!testOnly && !isTvDevice() && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                try {
-                    android.content.pm.PackageInstaller installer = activity.getPackageManager().getPackageInstaller();
-                    android.content.pm.PackageInstaller.SessionParams params =
-                            new android.content.pm.PackageInstaller.SessionParams(
-                                    android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-                    params.setAppPackageName(activity.getPackageName());
-                    int sessionId = installer.createSession(params);
-                    android.content.pm.PackageInstaller.Session session = installer.openSession(sessionId);
-                    try (InputStream in = new FileInputStream(apkFile)) {
-                        long total = apkFile.length();
-                        OutputStream out = session.openWrite("base.apk", 0, total);
-                        byte[] buf = new byte[8192];
-                        int n;
-                        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
-                        out.close();
-                    }
-                    int piFlags = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O
-                            ? android.app.PendingIntent.FLAG_IMMUTABLE : 0;
-                    android.app.PendingIntent pi = android.app.PendingIntent.getActivity(
-                            activity, 0, new Intent(activity, activity.getClass()), piFlags);
-                    session.commit(pi.getIntentSender());
-                    session.close();
-                    Log.d(TAG, "PackageInstaller Session 提交成功");
-                    if (testOnly) {
-                        Toast.makeText(activity, "测试成功：PackageInstaller Session API 可用", Toast.LENGTH_LONG).show();
-                        resetBtn();
-                    }
-                    return;
-                } catch (Exception e1) {
-                    String errSuffix = testOnly ? "（测试结束）" : "，尝试下一种";
-                    Log.w(TAG, "PackageInstaller Session 失败: " + e1.getMessage() + errSuffix);
-                    if (testOnly) {
-                        Toast.makeText(activity, "测试：PackageInstaller Session 不可用\n" + e1.getMessage(), Toast.LENGTH_LONG).show();
-                        resetBtn();
-                        return;
-                    }
-                }
-            }
-
-            // 2. ACTION_INSTALL_PACKAGE
+            // 1. ACTION_INSTALL_PACKAGE（Android 8+，弹出系统安装界面）
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                 try {
                     if (!activity.getPackageManager().canRequestPackageInstalls()) {
@@ -298,7 +257,7 @@ public class UpdateManager {
                     android.net.Uri apkUri = androidx.core.content.FileProvider.getUriForFile(
                             activity, activity.getPackageName() + ".fileprovider", apkFile);
                     Intent install = new Intent(Intent.ACTION_INSTALL_PACKAGE);
-                    install.setData(apkUri);
+                    install.setDataAndType(apkUri, "application/vnd.android.package-archive");
                     install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     activity.startActivity(install);
