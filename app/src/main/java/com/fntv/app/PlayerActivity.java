@@ -837,7 +837,7 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void applyHdrMode() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         boolean enabled = getSharedPreferences("fntv_prefs", MODE_PRIVATE).getBoolean("hdr_enabled", true);
         boolean videoHdr = isHdrVideo();
         Log.d(TAG, "applyHdrMode: enabled=" + enabled + " videoHdr=" + videoHdr);
