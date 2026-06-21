@@ -1,7 +1,7 @@
 {
-    "versionCode": 16,
-    "versionName": "1.1.6",
-    "apkUrl": "https://gitee.com/coffee710/fntv/releases/download/v1.1.6/FNTV_release_v1.1.6_20260617_2219.apk",
-    "changelog": "1.播放历史和飞牛同步\n2.新增FN ID登录\n",
+    "versionCode": 17,
+    "versionName": "1.1.7",
+    "apkUrl": "https://gitee.com/coffee710/fntv/releases/download/v1.1.7/FNTV_release_v1.1.7_20260621_1450.apk",
+    "changelog": "1.修复安卓7闪退问题\n2.修复手机更新无法安装问题",
     "forceUpdate": false
   }
