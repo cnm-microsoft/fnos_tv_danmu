@@ -13,13 +13,6 @@ import android.widget.Toast;
 import com.fntv.app.api.FnApiManager;
 import com.fntv.app.api.model.ApiResponse;
 import com.fntv.app.api.model.StreamResponse;
-import com.google.android.exoplayer2.C;
-import com.google.android.exoplayer2.Format;
-import com.google.android.exoplayer2.SimpleExoPlayer;
-import com.google.android.exoplayer2.source.TrackGroup;
-import com.google.android.exoplayer2.source.TrackGroupArray;
-import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
-import com.google.android.exoplayer2.trackselection.MappingTrackSelector;
 import com.google.gson.Gson;
 
 import java.util.HashMap;
@@ -64,11 +57,13 @@ public class CloudStreamManager {
         public final String url;
         public final boolean hls;
         public final int chunkedModeSize;
+        public final String userAgent;
 
-        public PlaybackConfig(String url, boolean hls, int chunkedModeSize) {
+        public PlaybackConfig(String url, boolean hls, int chunkedModeSize, String userAgent) {
             this.url = url;
             this.hls = hls;
             this.chunkedModeSize = chunkedModeSize;
+            this.userAgent = userAgent;
         }
     }
 
@@ -85,8 +80,8 @@ public class CloudStreamManager {
     private String[] qualityUrls;
     private int qualityCount = 0;
 
-    // ExoPlayer 引用（用于音轨/字幕切换，由外部注入）
-    private SimpleExoPlayer player;
+    // 网盘直链专用 UA（如 pan.baidu.com，由服务端下发）
+    private String cloudUserAgent = "";
 
     // Stream API 返回的音轨/字幕信息（供对话框显示标签用）
     private List<StreamResponse.AudioStreamInfo> streamAudioTracks;
@@ -135,7 +130,7 @@ public class CloudStreamManager {
             hls = isStrmFile;
             Log.d(TAG, "直链模式: isStrm=" + isStrmFile + " useHls=" + hls);
         }
-        return new PlaybackConfig(url, hls, chunkedMode);
+        return new PlaybackConfig(url, hls, chunkedMode, cloudUserAgent);
     }
 
     /** 获取当前直链 URL（用于 switchMediaSource 等） */
@@ -143,9 +138,6 @@ public class CloudStreamManager {
 
     /** 是否处于直链播放模式 */
     public boolean hasDirectUrl() { return !cloudDirectUrl.isEmpty(); }
-
-    /** 注入 ExoPlayer 引用（用于音轨/字幕切换） */
-    public void setPlayer(SimpleExoPlayer player) { this.player = player; }
 
     /** 获取用户最后选择的音轨标签（供信息面板展示） */
     public String getLastAudioTrackLabel() { return lastAudioTrackLabel; }
@@ -264,12 +256,11 @@ public class CloudStreamManager {
                                 // 非 STRM 的画质信息（直连网盘）
                                 qualityCount = sd.directLinkQualities != null ? sd.directLinkQualities.size() : 0;
                                 if (qualityCount > 0) {
-                                    // [诊断] 网盘鉴权 Cookie：确认 sd.header.Cookie 是否下发、是否被消费
+                                    // [诊断] 网盘鉴权 Cookie：确认 sd.header.Cookie 是否下发
                                     int cookieCount = (sd.header != null && sd.header.Cookie != null)
                                             ? sd.header.Cookie.size() : 0;
                                     Log.w(TAG, "[诊断] 非 STRM 直链: qualityCount=" + qualityCount
-                                            + " header.Cookie 条数=" + cookieCount
-                                            + " DataSource 当前 cloudCookie 非空=" + OkHttpExoDataSource.hasCloudCookie());
+                                            + " header.Cookie 条数=" + cookieCount);
                                     for (int qi = 0; qi < qualityCount; qi++) {
                                         StreamResponse.DirectLinkQuality q = sd.directLinkQualities.get(qi);
                                         Log.w(TAG, "[诊断]   q[" + qi + "] res=" + q.resolution
@@ -298,7 +289,7 @@ public class CloudStreamManager {
                                     cloudDirectMode = true;
 
                                     // 注入网盘专用 UA，让直链请求使用正确的 User-Agent
-                                    OkHttpExoDataSource.setCloudUserAgent(serverUA);
+                                    cloudUserAgent = serverUA;
                                     Log.d(TAG, "非 STRM 直链模式: " + cloudDirectUrl.substring(0, Math.min(80, cloudDirectUrl.length())) + "... UA=" + serverUA);
 
                                     cb.runOnUiThread(() -> {
@@ -345,7 +336,7 @@ public class CloudStreamManager {
         qualityCount = 0;
         qualityLabels = null;
         qualityUrls = null;
-        OkHttpExoDataSource.setCloudUserAgent("");
+        cloudUserAgent = "";
     }
 
     // ========== 画质菜单 ==========
@@ -432,271 +423,6 @@ public class CloudStreamManager {
                 ? qualityLabels[qualityIndex] : "";
         btnCloudMode.setText(ql.isEmpty() ? mode : mode + "/" + ql);
         btnCloudMode.setTextColor(isStrmFile || cloudDirectMode ? 0xFF81C784 : 0xFFFFB74D);
-    }
-
-    // ========== 音轨/字幕选择 ==========
-
-    /** 显示音轨选择弹窗（匹配弹幕设置的美化风格） */
-    public void showAudioTrackDialog(Activity activity) {
-        if (player == null) return;
-        DefaultTrackSelector selector = (DefaultTrackSelector) player.getTrackSelector();
-        MappingTrackSelector.MappedTrackInfo trackInfo = selector.getCurrentMappedTrackInfo();
-        TrackGroupArray groups = (trackInfo != null) ? trackInfo.getTrackGroups(C.TRACK_TYPE_AUDIO) : null;
-
-        // 优先用 ExoPlayer 的 TrackGroup（支持切换），FFmpeg 软解时 groups 为空，降级到 stream API
-        if (groups != null && groups.length > 0) {
-            showAudioTracksFromPlayer(activity, selector, groups);
-        } else if (streamAudioTracks != null && !streamAudioTracks.isEmpty()) {
-            showAudioTracksFromStreamApi(activity);
-        } else {
-            Toast.makeText(activity, trackInfo == null ? "音轨信息尚未就绪" : "无可用音轨", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    /** ExoPlayer 有 TrackGroup → 可切换音轨 */
-    private void showAudioTracksFromPlayer(Activity activity, DefaultTrackSelector selector, TrackGroupArray groups) {
-        final java.util.ArrayList<String> itemLabels = new java.util.ArrayList<>();
-        final java.util.ArrayList<Integer> itemGroupIdx = new java.util.ArrayList<>();
-        final java.util.ArrayList<Integer> itemTrackIdx = new java.util.ArrayList<>();
-
-        itemLabels.add("默认");
-        itemGroupIdx.add(-1);
-        itemTrackIdx.add(-1);
-
-        for (int g = 0; g < groups.length; g++) {
-            TrackGroup group = groups.get(g);
-            for (int t = 0; t < group.length; t++) {
-                Format fmt = group.getFormat(t);
-                String label = "音轨" + (itemLabels.size());
-                if (fmt.language != null && !fmt.language.isEmpty()) {
-                    label += "  " + fmt.language;
-                } else if (streamAudioTracks != null && t < streamAudioTracks.size()) {
-                    StreamResponse.AudioStreamInfo asi = streamAudioTracks.get(t);
-                    if (asi.language != null && !asi.language.isEmpty()) label += "  " + asi.language;
-                }
-                String codecStr = fmt.codecs != null ? fmt.codecs
-                        : (fmt.sampleMimeType != null ? fmt.sampleMimeType.replace("audio/", "") : "");
-                if (!codecStr.isEmpty()) label += "  " + codecStr;
-                if (fmt.channelCount > 0) label += "  " + fmt.channelCount + "ch";
-                if (fmt.sampleRate > 0) label += "  " + (fmt.sampleRate / 1000) + "kHz";
-
-                itemLabels.add(label);
-                itemGroupIdx.add(g);
-                itemTrackIdx.add(t);
-            }
-        }
-
-        final String[] items = itemLabels.toArray(new String[0]);
-        new android.app.AlertDialog.Builder(activity)
-                .setTitle("选择音轨")
-                .setItems(items, (dialog, which) -> {
-                    if (which < 0 || which >= itemLabels.size()) return;
-                    int selGroup = itemGroupIdx.get(which);
-                    int selTrack = itemTrackIdx.get(which);
-                    if (selGroup >= 0 && selTrack >= 0) {
-                        selector.setParameters(
-                            selector.buildUponParameters()
-                                .clearSelectionOverrides(C.TRACK_TYPE_AUDIO)
-                                .setRendererDisabled(C.TRACK_TYPE_AUDIO, false)
-                                .setSelectionOverride(C.TRACK_TYPE_AUDIO, groups,
-                                    new DefaultTrackSelector.SelectionOverride(selGroup, selTrack))
-                                .build()
-                        );
-                    } else {
-                        selector.setParameters(
-                            selector.buildUponParameters()
-                                .clearSelectionOverrides(C.TRACK_TYPE_AUDIO)
-                                .setRendererDisabled(C.TRACK_TYPE_AUDIO, false)
-                                .build()
-                        );
-                    }
-                    lastAudioTrackLabel = items[which];
-                    lastSubtitleTrackLabel = items[which];
-                    cb.onTrackChanged();
-                    Toast.makeText(activity, "已切换: " + items[which], Toast.LENGTH_SHORT).show();
-                    dialog.dismiss();
-                })
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    /** ExoPlayer 无 TrackGroup（FFmpeg 软解）→ 用 stream API 试切换（语言匹配 + 重载） */
-    private void showAudioTracksFromStreamApi(Activity activity) {
-        final String[] items = new String[streamAudioTracks.size()];
-        for (int i = 0; i < streamAudioTracks.size(); i++) {
-            StreamResponse.AudioStreamInfo asi = streamAudioTracks.get(i);
-            String lang = asi.language != null && !asi.language.isEmpty() ? asi.language : "未知";
-            String codec = FormatUtils.fmtAudioCodec(asi.codecName);
-            String ch = asi.channels > 0 ? (asi.channels == 8 ? "7.1" : asi.channels == 6 ? "5.1" : asi.channels + "ch") : "";
-            String br = asi.bps > 0 ? " " + FormatUtils.formatBitrate(asi.bps) : "";
-            items[i] = "音轨" + (i + 1) + "  " + lang + "  " + codec + (ch.isEmpty() ? "" : "  " + ch) + br;
-        }
-        new android.app.AlertDialog.Builder(activity)
-                .setTitle("选择音轨")
-                .setItems(items, (dialog, which) -> {
-                    if (which < 0 || which >= streamAudioTracks.size()) return;
-                    StreamResponse.AudioStreamInfo sel = streamAudioTracks.get(which);
-                    String lang = sel.language;
-                    if (lang != null && !lang.isEmpty()) {
-                        DefaultTrackSelector selector = (DefaultTrackSelector) player.getTrackSelector();
-                        selector.setParameters(
-                            selector.buildUponParameters()
-                                .clearSelectionOverrides(C.TRACK_TYPE_AUDIO)
-                                .setRendererDisabled(C.TRACK_TYPE_AUDIO, false)
-                                .setPreferredAudioLanguage(lang)
-                                .build()
-                        );
-                        lastAudioTrackLabel = items[which];
-                    cb.onTrackChanged();
-                    Toast.makeText(activity, "已切换: " + items[which], Toast.LENGTH_SHORT).show();
-                    } else {
-                        Toast.makeText(activity, "该音轨无语言标记，无法自动切换", Toast.LENGTH_SHORT).show();
-                    }
-                    dialog.dismiss();
-                })
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    /** 显示字幕选择弹窗（匹配弹幕设置的美化风格） */
-    public void showSubtitleTrackDialog(Activity activity) {
-        if (player == null) return;
-        DefaultTrackSelector selector = (DefaultTrackSelector) player.getTrackSelector();
-        MappingTrackSelector.MappedTrackInfo trackInfo = selector.getCurrentMappedTrackInfo();
-        TrackGroupArray groups = (trackInfo != null) ? trackInfo.getTrackGroups(C.TRACK_TYPE_TEXT) : null;
-
-        if (groups != null && groups.length > 0) {
-            showSubtitleTracksFromPlayer(activity, selector, groups);
-        } else if (streamSubtitleTracks != null && !streamSubtitleTracks.isEmpty()) {
-            showSubtitleTracksFromStreamApi(activity);
-        } else {
-            Toast.makeText(activity, trackInfo == null ? "字幕信息尚未就绪" : "无可用字幕", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    /** ExoPlayer 有 TrackGroup → 可切换字幕 */
-    private void showSubtitleTracksFromPlayer(Activity activity, DefaultTrackSelector selector, TrackGroupArray groups) {
-        final java.util.ArrayList<String> itemLabels = new java.util.ArrayList<>();
-        final java.util.ArrayList<Integer> itemGroupIdx = new java.util.ArrayList<>();
-        final java.util.ArrayList<Integer> itemTrackIdx = new java.util.ArrayList<>();
-
-        itemLabels.add("关闭字幕");
-        itemGroupIdx.add(-2);
-        itemTrackIdx.add(-2);
-        itemLabels.add("默认");
-        itemGroupIdx.add(-1);
-        itemTrackIdx.add(-1);
-
-        for (int g = 0; g < groups.length; g++) {
-            TrackGroup group = groups.get(g);
-            for (int t = 0; t < group.length; t++) {
-                Format fmt = group.getFormat(t);
-                String label = "字幕" + (itemLabels.size() - 1);
-                if (fmt.language != null && !fmt.language.isEmpty()) {
-                    label += "  " + fmt.language;
-                } else if (streamSubtitleTracks != null && t < streamSubtitleTracks.size()) {
-                    StreamResponse.SubtitleStreamInfo ssi = streamSubtitleTracks.get(t);
-                    if (ssi.language != null && !ssi.language.isEmpty()) label += "  " + ssi.language;
-                }
-                String codecStr = fmt.codecs != null ? fmt.codecs
-                        : (fmt.sampleMimeType != null ? fmt.sampleMimeType.replace("text/", "") : "");
-                if (!codecStr.isEmpty()) label += "  " + codecStr.toUpperCase();
-
-                itemLabels.add(label);
-                itemGroupIdx.add(g);
-                itemTrackIdx.add(t);
-            }
-        }
-
-        final String[] items = itemLabels.toArray(new String[0]);
-        new android.app.AlertDialog.Builder(activity)
-                .setTitle("选择字幕")
-                .setItems(items, (dialog, which) -> {
-                    if (which < 0 || which >= itemLabels.size()) return;
-                    int selGroup = itemGroupIdx.get(which);
-                    int selTrack = itemTrackIdx.get(which);
-                    if (selGroup == -2) {
-                        selector.setParameters(
-                            selector.buildUponParameters()
-                                .clearSelectionOverrides(C.TRACK_TYPE_TEXT)
-                                .setRendererDisabled(C.TRACK_TYPE_TEXT, true)
-                                .build()
-                        );
-                    } else if (selGroup >= 0 && selTrack >= 0) {
-                        selector.setParameters(
-                            selector.buildUponParameters()
-                                .clearSelectionOverrides(C.TRACK_TYPE_TEXT)
-                                .setRendererDisabled(C.TRACK_TYPE_TEXT, false)
-                                .setSelectionOverride(C.TRACK_TYPE_TEXT, groups,
-                                    new DefaultTrackSelector.SelectionOverride(selGroup, selTrack))
-                                .build()
-                        );
-                    } else {
-                        selector.setParameters(
-                            selector.buildUponParameters()
-                                .clearSelectionOverrides(C.TRACK_TYPE_TEXT)
-                                .setRendererDisabled(C.TRACK_TYPE_TEXT, false)
-                                .build()
-                        );
-                    }
-                    lastAudioTrackLabel = items[which];
-                    lastSubtitleTrackLabel = items[which];
-                    cb.onTrackChanged();
-                    Toast.makeText(activity, "已切换: " + items[which], Toast.LENGTH_SHORT).show();
-                    dialog.dismiss();
-                })
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    /** ExoPlayer 无 TrackGroup（FFmpeg 软解）→ 用 stream API 试切换（语言匹配） */
-    private void showSubtitleTracksFromStreamApi(Activity activity) {
-        final String[] items = new String[streamSubtitleTracks.size() + 1];
-        items[0] = "关闭字幕";
-        for (int i = 0; i < streamSubtitleTracks.size(); i++) {
-            StreamResponse.SubtitleStreamInfo ssi = streamSubtitleTracks.get(i);
-            String lang = ssi.language != null && !ssi.language.isEmpty() ? ssi.language : "未知";
-            String codec = ssi.codecName != null ? ssi.codecName.toUpperCase() : "?";
-            String def = ssi.isDefault != 0 ? " [默认]" : "";
-            items[i + 1] = "字幕" + (i + 1) + "  " + lang + "  " + codec + def;
-        }
-        new android.app.AlertDialog.Builder(activity)
-                .setTitle("选择字幕")
-                .setItems(items, (dialog, which) -> {
-                    if (which < 0) return;
-                    DefaultTrackSelector selector = (DefaultTrackSelector) player.getTrackSelector();
-                    if (which == 0) {
-                        // 关闭字幕
-                        selector.setParameters(
-                            selector.buildUponParameters()
-                                .clearSelectionOverrides(C.TRACK_TYPE_TEXT)
-                                .setRendererDisabled(C.TRACK_TYPE_TEXT, true)
-                                .build()
-                        );
-                    } else {
-                        int idx = which - 1;
-                        if (idx < streamSubtitleTracks.size()) {
-                            StreamResponse.SubtitleStreamInfo sel = streamSubtitleTracks.get(idx);
-                            String lang = sel.language;
-                            if (lang != null && !lang.isEmpty()) {
-                                selector.setParameters(
-                                    selector.buildUponParameters()
-                                        .clearSelectionOverrides(C.TRACK_TYPE_TEXT)
-                                        .setRendererDisabled(C.TRACK_TYPE_TEXT, false)
-                                        .setPreferredTextLanguage(lang)
-                                        .build()
-                                );
-                            }
-                        }
-                    }
-                    lastAudioTrackLabel = items[which];
-                    lastSubtitleTrackLabel = items[which];
-                    cb.onTrackChanged();
-                    Toast.makeText(activity, "已切换: " + items[which], Toast.LENGTH_SHORT).show();
-                    dialog.dismiss();
-                })
-                .setNegativeButton("取消", null)
-                .show();
     }
 
     // ========== 内部 ==========

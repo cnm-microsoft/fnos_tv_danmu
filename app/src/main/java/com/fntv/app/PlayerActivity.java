@@ -20,22 +20,17 @@ import androidx.appcompat.app.AppCompatActivity;
 import android.content.pm.ActivityInfo;
 import com.fntv.app.api.FnApiManager;
 import com.fntv.app.api.model.*;
-import com.google.android.exoplayer2.*;
-import com.google.android.exoplayer2.source.ProgressiveMediaSource;
-import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
-
-import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
-import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
-import com.google.android.exoplayer2.ui.PlayerView;
-import com.google.android.exoplayer2.ui.CaptionStyleCompat;
+import com.shuyu.gsyvideoplayer.video.EmptyGSYVideoPlayer;
+import com.shuyu.gsyvideoplayer.video.base.GSYVideoView;
+import com.shuyu.gsyvideoplayer.listener.VideoAllCallBack;
+import com.shuyu.gsyvideoplayer.utils.GSYVideoType;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class PlayerActivity extends AppCompatActivity {
 
-    private PlayerView playerView;
-    private SimpleExoPlayer player;
+    private EmptyGSYVideoPlayer playerView;
     private TextView tvBuffering, tvTime, infoText;
     private SeekBar seekBar;
     private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
@@ -63,7 +58,6 @@ public class PlayerActivity extends AppCompatActivity {
     private int seasonNumber = 1;
     private long backPressedTime = 0;
     private CloudStreamManager cloudStreamManager;
-    private boolean useHls = false;
     private int seekStep = 10000;
     private int streamBitrate = 0; // bps 来自 stream API
     private Runnable seekCommitR;
@@ -86,6 +80,7 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean firstReady = true;   // 首次进入 READY（用于控制初始 UI 显示）
     private java.util.List<StreamResponse.AudioStreamInfo> streamAudioTracks;
     private java.util.List<StreamResponse.SubtitleStreamInfo> streamSubtitleTracks;
+    private int retryCount = 0;
 
 
     @Override
@@ -143,7 +138,11 @@ public class PlayerActivity extends AppCompatActivity {
         initPlayer();
 
         danmuManager = new DanmuManager(this, new DanmuManager.DataProvider() {
-            @Override public Player getPlayer() { return player; }
+            @Override public long getPlayerDurationMs() {
+                if (playerView == null) return 0;
+                long d = playerView.getDuration();
+                return d > 0 ? d : (itemDuration > 0 ? itemDuration * 1000 : 0);
+            }
             @Override public long getItemDuration() { return itemDuration; }
             @Override public String getItemTV() { return itemTV; }
             @Override public String getItemTitle() { return itemTitle; }
@@ -167,9 +166,9 @@ public class PlayerActivity extends AppCompatActivity {
                         longPressing = false;
                         longPressHandler.postDelayed(() -> {
                             longPressing = true;
-                            if (player != null) {
-                                speedBeforeLongPress = player.getPlaybackParameters().speed;
-                                player.setPlaybackSpeed(2.0f);
+                            if (playerView != null) {
+                                speedBeforeLongPress = speeds[speedIdx];
+                                playerView.setSpeedPlaying(2.0f, true);
                                 danmuView.setPlaybackSpeed(2.0f);
                                 showCtrl(false);
                                 if (tvSpeedHint != null) {
@@ -183,8 +182,8 @@ public class PlayerActivity extends AppCompatActivity {
                         longPressHandler.removeCallbacksAndMessages(null);
                         if (longPressing) {
                             longPressing = false;
-                            if (player != null) {
-                                player.setPlaybackSpeed(speedBeforeLongPress);
+                            if (playerView != null) {
+                                playerView.setSpeedPlaying(speedBeforeLongPress, true);
                                 danmuView.setPlaybackSpeed(speedBeforeLongPress);
                             }
                             if (tvSpeedHint != null) {
@@ -290,20 +289,7 @@ public class PlayerActivity extends AppCompatActivity {
             @Override public void onStreamDataFailed() { startPlayback(); }
             @Override public void startPlayback() { PlayerActivity.this.startPlayback(); }
             @Override public void onTrackChanged() {
-                final Format oldFmt = player != null ? player.getAudioFormat() : null;
-                final int[] tries = {6};
-                handler.post(new Runnable() {
-                    @Override public void run() {
-                        if (player == null) return;
-                        Format newFmt = player.getAudioFormat();
-                        if (newFmt != null && newFmt != oldFmt) {
-                            updateInfo();
-                        } else if (tries[0] > 0) {
-                            tries[0]--;
-                            handler.postDelayed(this, 500);
-                        }
-                    }
-                });
+                handler.post(() -> updateInfo());
             }
             @Override public void reloadPlayback() {
                 mediaGuid = null;
@@ -325,7 +311,6 @@ public class PlayerActivity extends AppCompatActivity {
             @Override public void runOnUiThread(Runnable r) { PlayerActivity.this.runOnUiThread(r); }
         }, btnCloudMode, getSharedPreferences("fntv_prefs", MODE_PRIVATE));
         cloudStreamManager.initFromPrefs();
-        cloudStreamManager.setPlayer(player);
 
         // 顶部栏焦点链
         btnCloudMode.setNextFocusLeftId(btnBack.getId());
@@ -335,32 +320,23 @@ public class PlayerActivity extends AppCompatActivity {
         btnDanmu.setNextFocusUpId(btnBack.getId());
         btnLock.setNextFocusUpId(btnCloudMode.getId());
 
-        // 音轨/字幕选择按钮
-        Button btnAudioTrack = findViewById(R.id.btnAudioTrack);
-        Button btnSubtitleTrack = findViewById(R.id.btnSubtitleTrack);
-        if (btnAudioTrack != null) {
-            btnAudioTrack.setOnClickListener(v -> cloudStreamManager.showAudioTrackDialog(PlayerActivity.this));
-        }
-        if (btnSubtitleTrack != null) {
-            btnSubtitleTrack.setOnClickListener(v -> cloudStreamManager.showSubtitleTrackDialog(PlayerActivity.this));
-        }
-
         setupFocusAutoHide();
 
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
-                if (fromUser && player != null) {
+                if (fromUser && playerView != null) {
+                    long dur = playerView.getDuration();
                     // 立即更新 UI（时间显示）
-                    tvTime.setText(FormatUtils.fmt(p) + " / " + FormatUtils.fmt(player.getDuration()));
+                    tvTime.setText(FormatUtils.fmt(p) + " / " + FormatUtils.fmt(dur));
                     if (tvSeekOverlay.getVisibility() == View.VISIBLE) {
-                        tvSeekOverlay.setText(FormatUtils.fmt(p) + " / " + FormatUtils.fmt(player.getDuration()));
+                        tvSeekOverlay.setText(FormatUtils.fmt(p) + " / " + FormatUtils.fmt(dur));
                     }
                     // 防抖：停止操作 1s 后才真正 seek，避免按住时大量请求
                     if (seekCommitR != null) handler.removeCallbacks(seekCommitR);
                     pendingSeekMs = p;
                     seekCommitR = () -> {
-                        if (player != null) {
-                            player.seekTo(p);
+                        if (playerView != null) {
+                            playerView.seekTo(p);
                             if (danmuManager != null) danmuManager.onSeekTo(p);
                         }
                         pendingSeekMs = -1;
@@ -373,8 +349,8 @@ public class PlayerActivity extends AppCompatActivity {
                 // 触摸松开时立即执行最后的 seek
                 pendingSeekMs = -1;
                 if (seekCommitR != null) handler.removeCallbacks(seekCommitR);
-                if (player != null && sb.getProgress() >= 0) {
-                    player.seekTo(sb.getProgress());
+                if (playerView != null && sb.getProgress() >= 0) {
+                    playerView.seekTo(sb.getProgress());
                     if (danmuManager != null) danmuManager.onSeekTo(sb.getProgress());
                 }
             }
@@ -423,132 +399,85 @@ public class PlayerActivity extends AppCompatActivity {
                 win.setAttributes(lp);
             }
         }
-        DefaultRenderersFactory rf = new DefaultRenderersFactory(this);
-        if ("software".equals(getSharedPreferences("fntv_prefs", MODE_PRIVATE).getString("decoder_mode", "hardware"))) {
-            rf.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER);
-        }else {
-            rf.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON);
-        }
-        player = new SimpleExoPlayer.Builder(this, rf)
-                .setTrackSelector(new DefaultTrackSelector(this)).build();
-        playerView.setPlayer(player);
-        playerView.setUseController(false);
-        playerView.setShutterBackgroundColor(Color.TRANSPARENT);
+        // GSYVideoPlayer 配置
         playerView.setKeepScreenOn(true);
-        // 字幕样式：白色文字，透明背景，黑色描边
-        com.google.android.exoplayer2.ui.CaptionStyleCompat captionStyle =
-                new com.google.android.exoplayer2.ui.CaptionStyleCompat(
-                        Color.WHITE,                    // 前景色
-                        Color.TRANSPARENT,              // 背景色（透明）
-                        Color.TRANSPARENT,              // 窗口色（透明）
-                        com.google.android.exoplayer2.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                        Color.BLACK,                    // 描边色
-                        null                            // 字体
-                );
-        if (playerView.getSubtitleView() != null) {
-            playerView.getSubtitleView().setStyle(captionStyle);
+        // 软解模式：使用 IJK 软解
+        if (!isHwDecode) {
+            // IJK 软解通过 player manager 选项设置，这里仅标记
+            actualVideoDecoder = "软解";
+            actualAudioDecoder = "软解";
+        } else {
+            actualVideoDecoder = "硬解";
+            actualAudioDecoder = "硬解";
         }
 
-        player.addAnalyticsListener(new com.google.android.exoplayer2.analytics.AnalyticsListener() {
-            @Override
-            public void onVideoDecoderInitialized(EventTime eventTime, String decoderName,
-                                                  long initializedTimestampMs) {
-                actualVideoDecoder = decoderName;
-                Log.d(TAG, "视频解码器: " + decoderName);
+        playerView.setVideoAllCallBack(new VideoAllCallBack() {
+            @Override public void onStartPrepared(String url, Object... objects) {
+                Log.d(TAG, "GSY onStartPrepared: " + url);
+                tvBuffering.setVisibility(View.VISIBLE);
             }
-
-            @Override
-            public void onAudioDecoderInitialized(EventTime eventTime, String decoderName,
-                                                  long initializedTimestampMs) {
-                actualAudioDecoder = decoderName;
-                Log.d(TAG, "音频解码器: " + decoderName);
-            }
-        });
-
-        player.addListener(new Player.Listener() {
-            @Override public void onPlaybackStateChanged(int s) {
-                tvBuffering.setVisibility(s == Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
-                if (s == Player.STATE_READY) {
-                    if (!seeked && seekTs > 0) { player.seekTo(seekTs); seeked = true; }
-                    startSave(); updateTime();
-                    if (firstReady) { saveProgress(); showCtrl(true); firstReady = false; }
-                    btnPlayPause.setText(player.isPlaying() ? "暂停" : "播放");
-                    if (danmuManager != null) danmuManager.onPlayerReady();
-                    // HDR 检测（延时等格式就绪）
-                    checkHdr();
-                    // 打印音轨信息
-                    com.google.android.exoplayer2.Format af2 = player.getAudioFormat();
-                    if (af2 != null) {
-                        Log.d(TAG, "音轨: codec=" + af2.codecs + " mime=" + af2.sampleMimeType
-                                + " 采样率=" + af2.sampleRate + "Hz"
-                                + " 声道=" + af2.channelCount
-                                + " 码率=" + af2.bitrate);
-                    } else {
-                        Log.d(TAG, "音轨: 无音频信息");
+            @Override public void onPrepared(String url, Object... objects) {
+                Log.d(TAG, "GSY onPrepared");
+                tvBuffering.setVisibility(View.GONE);
+                if (!seeked && seekTs > 0) {
+                    playerView.seekTo((int) seekTs);
+                    seeked = true;
+                }
+                startSave(); updateTime();
+                if (firstReady) { saveProgress(); showCtrl(true); firstReady = false; }
+                btnPlayPause.setText("暂停");
+                if (danmuManager != null) danmuManager.onPlayerReady();
+                // HDR 检测（延时等格式就绪）
+                checkHdr();
+                // 片头跳过（只开始触发一次，片尾在 updateTime 实时监测）
+                if (!introSkipped && (parentGuid != null || (itemTV != null && !itemTV.isEmpty()))) {
+                    SharedPreferences sp = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
+                    String skipId = parentGuid != null && !parentGuid.isEmpty() ? parentGuid : itemTV;
+                    int introSec = sp.getInt("skip_" + skipId + "_intro", 0);
+                    if (introSec > 0) {
+                        int pos = (int)(playerView.getCurrentPositionWhenPlaying() / 1000);
+                        if (pos < introSec) { playerView.seekTo(introSec * 1000); danmuManager.showDanmuStatus("跳过片头 " + introSec + "秒"); }
+                        introSkipped = true;
                     }
-                    // 片头跳过（只开始触发一次，片尾在 updateTime 实时监测）
-                    if (!introSkipped && (parentGuid != null || (itemTV != null && !itemTV.isEmpty()))) {
-                        SharedPreferences sp = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
-                        String skipId = parentGuid != null && !parentGuid.isEmpty() ? parentGuid : itemTV;
-                        int introSec = sp.getInt("skip_" + skipId + "_intro", 0);
-                        if (introSec > 0) {
-                            int pos = (int)(player.getCurrentPosition() / 1000);
-                            if (pos < introSec) { player.seekTo(introSec * 1000L); danmuManager.showDanmuStatus("跳过片头 " + introSec + "秒"); }
-                            introSkipped = true;
-                        }
-                    }
-                } else if (s == Player.STATE_ENDED) {
-                    Log.d(TAG, "STATE_ENDED hasNext=" + (episodeManager != null && episodeManager.hasNext()));
-                    if (episodeManager != null && episodeManager.hasNext()) {
-                        episodeManager.playNext();
-                    }
-                } else {
-                    stopSave();
-                    if (danmuManager != null) danmuManager.onPlayerPause();
                 }
             }
-            int retryCount = 0;
-            @Override public void onPlayerError(PlaybackException e) {
-                // 打印完整错误链
-                StringBuilder sb2 = new StringBuilder("播放错误: " + e.getMessage());
-                Throwable tc = e;
-                while (tc != null) {
-                    sb2.append("\n  ").append(tc.getClass().getSimpleName()).append(": ").append(tc.getMessage());
-                    tc = tc.getCause();
+            @Override public void onClickStartIcon(String url, Object... objects) {}
+            @Override public void onClickStartError(String url, Object... objects) {}
+            @Override public void onClickStop(String url, Object... objects) {}
+            @Override public void onClickStopFullscreen(String url, Object... objects) {}
+            @Override public void onClickResume(String url, Object... objects) {}
+            @Override public void onClickResumeFullscreen(String url, Object... objects) {}
+            @Override public void onClickSeekbar(String url, Object... objects) {}
+            @Override public void onClickSeekbarFullscreen(String url, Object... objects) {}
+            @Override public void onNoteClick(String url, Object... objects) {}
+            @Override public void onNoteClickFullscreen(String url, Object... objects) {}
+            @Override public void onAutoComplete(String url, Object... objects) {
+                Log.d(TAG, "GSY onAutoComplete hasNext=" + (episodeManager != null && episodeManager.hasNext()));
+                if (episodeManager != null && episodeManager.hasNext()) {
+                    episodeManager.playNext();
                 }
-                Log.e(TAG, sb2.toString());
-                // 按响应码切换
-                int code = OkHttpExoDataSource.lastResponseCode;
-                if (code == 200 && !useHls && cloudStreamManager.hasDirectUrl()) {
-                    useHls = true;
-                    Log.d(TAG, "响应200，切换到HLS");
-                    switchMediaSource(true);
-                    return;
-                } else if (code == 206 && useHls && cloudStreamManager.hasDirectUrl()) {
-                    useHls = false;
-                    Log.d(TAG, "响应206，切换到渐进式");
-                    switchMediaSource(false);
-                    return;
-                } else if (cloudStreamManager.hasDirectUrl() && useHls) {
-                    // 非200/206时按渐进式重试
-                    useHls = false;
-                    Log.d(TAG, "非200/206响应码(" + code + ")，切换到渐进式");
-                    switchMediaSource(false);
-                    return;
-                }
-                if (retryCount < 5 && player != null) {
+            }
+            @Override public void onAutoCompletion(String url, Object... objects) {}
+            @Override public void onComplete(String url, Object... objects) {}
+            @Override public void onEnterFullscreen(String url, Object... objects) {}
+            @Override public void onQuitFullscreen(String url, Object... objects) {}
+            @Override public void onQuitPlaying(String url, Object... objects) {
+                stopSave();
+                if (danmuManager != null) danmuManager.onPlayerPause();
+            }
+            @Override public void onPlayError(String url, Object... objects) {
+                Log.e(TAG, "GSY 播放错误: url=" + url);
+                if (retryCount < 5) {
                     retryCount++;
                     handler.postDelayed(() -> {
-                        if (player != null) {
-                            player.prepare();
-                            player.setPlayWhenReady(true);
+                        if (playerView != null) {
+                            playerView.startPlayLogic();
                         }
                     }, 2000 * retryCount);
                 }
             }
+            @Override public void onPlayBlank(String url, Object... objects) {}
         });
-
-
     }
 
     private void loadPlayInfo() {
@@ -598,21 +527,37 @@ public class PlayerActivity extends AppCompatActivity {
         });
     }
 
-    /** 开始播放（加载到 ExoPlayer） */
+    /** 开始播放（加载到 GSYVideoPlayer） */
     private void startPlayback() {
         if (mediaGuid == null) return;
         CloudStreamManager.PlaybackConfig cfg = cloudStreamManager.getPlaybackConfig(baseUrl, mediaGuid);
-        OkHttpExoDataSource.setChunkedMode(cfg.chunkedModeSize);
-        useHls = cfg.hls;
-        com.google.android.exoplayer2.upstream.DataSource.Factory f = () -> new OkHttpExoDataSource(apiManager.getStreamClient());
-        if (useHls) {
-            player.setMediaSource(new com.google.android.exoplayer2.source.hls.HlsMediaSource.Factory(f).createMediaSource(MediaItem.fromUri(cfg.url)));
-            Log.d(TAG, "播放器: HLS");
-        } else {
-            player.setMediaSource(new com.google.android.exoplayer2.source.ProgressiveMediaSource.Factory(f, new DefaultExtractorsFactory()).createMediaSource(MediaItem.fromUri(cfg.url)));
-            Log.d(TAG, "播放器: 渐进式");
+        Log.d(TAG, "startPlayback: url=" + cfg.url + " hls=" + cfg.hls + " ua=" + cfg.userAgent);
+
+        // 构建 header（网盘直链专用 UA + NAS 鉴权）
+        Map<String, String> headers = new HashMap<>();
+        if (cfg.userAgent != null && !cfg.userAgent.isEmpty()) {
+            headers.put("User-Agent", cfg.userAgent);
         }
-        player.prepare(); player.setPlayWhenReady(true);
+        // NAS 代理模式需要鉴权头
+        if (cfg.url.contains("/v/api/v1/media/range/")) {
+            String token = apiManager.getToken();
+            if (token != null && !token.isEmpty()) {
+                headers.put("Authorization", token);
+            }
+            headers.put("Cookie", "mode=relay");
+            // 计算 Authx 签名（基于 URL path）
+            try {
+                String urlPath = cfg.url.substring(cfg.url.indexOf("/v/api/"));
+                String authx = com.fntv.app.api.FnAuthUtils.genAuthx(urlPath, null);
+                headers.put("Authx", authx);
+            } catch (Exception e) {
+                Log.w(TAG, "Authx 计算失败: " + e.getMessage());
+            }
+        }
+
+        retryCount = 0;
+        playerView.setUp(cfg.url, false, headers, null);
+        playerView.startPlayLogic();
         Log.d(TAG, "startPlayback: parentGuid=" + parentGuid + " episodeLoaded=" + (episodeManager != null && episodeManager.isLoaded()) + " loadingEp=" + (episodeManager != null && episodeManager.isLoading()));
         if (parentGuid != null && !parentGuid.isEmpty() && episodeManager != null && !episodeManager.isLoaded() && !episodeManager.isLoading())
             episodeManager.loadList(parentGuid);
@@ -623,13 +568,14 @@ public class PlayerActivity extends AppCompatActivity {
     // ========== 控制 ==========
 
     private void togglePlay() {
-        if (player == null) return;
-        if (player.isPlaying()) {
-            player.pause();
+        if (playerView == null) return;
+        int state = playerView.getCurrentState();
+        if (state == GSYVideoView.CURRENT_STATE_PLAYING) {
+            playerView.onVideoPause();
             btnPlayPause.setText("播放");
             if (danmuManager != null) danmuManager.onPlayerPause();
         } else {
-            player.play();
+            playerView.onVideoResume();
             btnPlayPause.setText("暂停");
             updateTime();
             if (danmuManager != null) danmuManager.onPlayerReady();
@@ -637,9 +583,11 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void seekRel(int ms) {
-        if (player == null) return;
-        long p = Math.max(0, Math.min(player.getDuration(), player.getCurrentPosition() + ms));
-        player.seekTo(p);
+        if (playerView == null) return;
+        long cur = playerView.getCurrentPositionWhenPlaying();
+        long dur = playerView.getDuration();
+        long p = Math.max(0, Math.min(dur, cur + ms));
+        playerView.seekTo((int) p);
         if (danmuManager != null) danmuManager.onSeekTo(p);
     }
 
@@ -647,7 +595,7 @@ public class PlayerActivity extends AppCompatActivity {
         speedIdx = (speedIdx + 1) % speeds.length;
         float s = speeds[speedIdx];
         btnSpeed.setText((s == (int)s ? String.valueOf((int)s) : String.valueOf(s)) + "x");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) player.setPlaybackSpeed(s);
+        if (playerView != null) playerView.setSpeedPlaying(s, true);
         if (danmuManager != null) danmuView.setPlaybackSpeed(s);
     }
 
@@ -655,24 +603,20 @@ public class PlayerActivity extends AppCompatActivity {
         ratioIdx = (ratioIdx + 1) % RATIO_MODES.length;
         btnRatio.setText(RATIO_LABELS[ratioIdx]);
         if (playerView != null) {
-            playerView.setResizeMode(RATIO_MODES[ratioIdx]);
-            // 拉伸/缩放时把字幕上移，避免被裁切
-            if (playerView.getSubtitleView() != null) {
-                ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) playerView.getSubtitleView().getLayoutParams();
-                if (lp != null) {
-                    int bottom = RATIO_MODES[ratioIdx] == 0 ? 0 : (int)(55 * getResources().getDisplayMetrics().density);
-                    if (lp.bottomMargin != bottom) {
-                        lp.bottomMargin = bottom;
-                        playerView.getSubtitleView().setLayoutParams(lp);
-                    }
-                }
+            int showType;
+            switch (RATIO_MODES[ratioIdx]) {
+                case 1: showType = GSYVideoType.SCREEN_MATCH_FULL; break;  // 拉伸
+                case 2: showType = GSYVideoType.SCREEN_TYPE_FULL; break;   // 缩放（裁剪）
+                default: showType = GSYVideoType.SCREEN_TYPE_DEFAULT; break; // 适应
             }
+            GSYVideoType.setShowType(showType);
+            playerView.changeTextureViewShowType();
         }
     }
 
     private void checkHdr() {
         handler.postDelayed(() -> {
-            if (player == null) return;
+            if (playerView == null) return;
             boolean isHdr = isHdrVideo();
             Log.d(TAG, "HDR检查: isHdr=" + isHdr
                     + " streamVHdr=" + streamVHdr
@@ -696,8 +640,6 @@ public class PlayerActivity extends AppCompatActivity {
                 }
             } else if (isHdr && !deviceSupportsHdr()) {
                 Log.d(TAG, "设备不支持 HDR，跳过");
-                // 可选：提示用户
-                // showDanmuStatus("设备不支持 HDR 显示");
             }
         }, 1500);
     }
@@ -783,21 +725,6 @@ public class PlayerActivity extends AppCompatActivity {
         dialog.show();
     }
 
-    private void switchMediaSource(boolean toHls) {
-        if (player == null || !cloudStreamManager.hasDirectUrl()) return;
-        handler.post(() -> {
-            String u = cloudStreamManager.getCloudDirectUrl();
-            com.google.android.exoplayer2.upstream.DataSource.Factory f2 = () -> new OkHttpExoDataSource(apiManager.getStreamClient());
-            com.google.android.exoplayer2.source.MediaSource ms = toHls
-                    ? new com.google.android.exoplayer2.source.hls.HlsMediaSource.Factory(f2).createMediaSource(MediaItem.fromUri(u))
-                    : new com.google.android.exoplayer2.source.ProgressiveMediaSource.Factory(f2, new DefaultExtractorsFactory()).createMediaSource(MediaItem.fromUri(u));
-            player.stop();
-            player.setMediaSource(ms);
-            player.prepare();
-            player.setPlayWhenReady(true);
-        });
-    }
-
     private void showBrightnessDialog() {
         SharedPreferences p = getSharedPreferences("fntv_prefs", MODE_PRIVATE);
         int brightness = p.getInt("video_brightness", 100);
@@ -851,12 +778,6 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private boolean isHdrVideo() {
-        Format vf = player != null ? player.getVideoFormat() : null;
-        if (vf != null && vf.colorInfo != null) {
-            int cs = vf.colorInfo.colorSpace;
-            int ct = vf.colorInfo.colorTransfer;
-            if (cs >= 6 || ct == 7 || ct == 16 || ct == 18) return true;
-        }
         return streamVHdr || (!streamVColor.isEmpty() && (streamVColor.contains("bt2020") || streamVColor.contains("2020")));
     }
 
@@ -983,8 +904,8 @@ public class PlayerActivity extends AppCompatActivity {
     };
 
     private void updateTime() {
-        if (player == null) return;
-        long cur = player.getCurrentPosition(), dur = player.getDuration();
+        if (playerView == null) return;
+        long cur = playerView.getCurrentPositionWhenPlaying(), dur = playerView.getDuration();
         seekBar.setMax((int) Math.max(dur, 1));
         seekBar.setKeyProgressIncrement(5000); // 方向键每次 5 秒
         // 防抖期间不覆盖 UI，避免抽搐（tvTime 和 seekBar 进度由 onProgressChanged 控制）
@@ -992,6 +913,11 @@ public class PlayerActivity extends AppCompatActivity {
             tvTime.setText(FormatUtils.fmt(cur) + " / " + FormatUtils.fmt(dur));
             seekBar.setProgress((int) cur);
         }
+        // 缓冲状态显示
+        int state = playerView.getCurrentState();
+        tvBuffering.setVisibility(state == GSYVideoView.CURRENT_STATE_PREPAREING
+                || state == GSYVideoView.CURRENT_STATE_PLAYING_BUFFERING_START
+                ? View.VISIBLE : View.GONE);
         if (danmuManager != null) danmuManager.setPlayTime(cur);
         // 实时监测片尾位置
         if (!outroSkipped && dur > 0) {
@@ -999,18 +925,19 @@ public class PlayerActivity extends AppCompatActivity {
             String sid = parentGuid != null && !parentGuid.isEmpty() ? parentGuid : (itemTV != null ? itemTV : null);
             if (sid != null) {
                 int outroSec = sp.getInt("skip_" + sid + "_outro", 0);
-                if (outroSec > 0) Log.d(TAG, "片尾检测: cur=" + (cur/1000) + "s dur=" + (dur/1000) + "s 阈值=" + (dur/1000 - outroSec) + "s");
                 if (outroSec > 0 && cur / 1000 > dur / 1000 - outroSec) {
-                outroSkipped = true;
-                danmuManager.showDanmuStatus("检测到片尾");
-                if (episodeManager != null && episodeManager.hasNext())
-                    handler.postDelayed(() -> episodeManager.playNext(), 1000);
+                    outroSkipped = true;
+                    danmuManager.showDanmuStatus("检测到片尾");
+                    if (episodeManager != null && episodeManager.hasNext())
+                        handler.postDelayed(() -> episodeManager.playNext(), 1000);
                 }
             }
         }
         handler.postDelayed(timeR, 200);
     }
-    private final Runnable timeR = () -> { if (player != null && player.isPlaying()) updateTime(); };
+    private final Runnable timeR = () -> {
+        if (playerView != null && playerView.getCurrentState() == GSYVideoView.CURRENT_STATE_PLAYING) updateTime();
+    };
 
     private void probeWithMediaExtractor() {
         if (mediaGuid == null || baseUrl == null) return;
@@ -1039,45 +966,34 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void updateInfo() {
-        if (player == null) return;
-        Format vf = player.getVideoFormat();
-        Format af = player.getAudioFormat();
-
-        // 视频（左列）
+        // 视频（左列）—— 使用 stream API 探测数据
         StringBuilder v = new StringBuilder();
         v.append("── 视频 ──\n");
-        String codec = FormatUtils.fmtVideoCodec(streamVCodec.isEmpty() ? (vf != null ? vf.codecs : null) : streamVCodec);
+        String codec = FormatUtils.fmtVideoCodec(streamVCodec);
         v.append("编码 ").append(codec).append("\n");
-        int w = streamVWidth > 0 ? streamVWidth : (vf != null ? vf.width : 0);
-        int h = streamVHeight > 0 ? streamVHeight : (vf != null ? vf.height : 0);
-        if (w > 0 && h > 0) v.append("分辨率 ").append(w).append("×").append(h).append("\n");
+        if (streamVWidth > 0 && streamVHeight > 0)
+            v.append("分辨率 ").append(streamVWidth).append("×").append(streamVHeight).append("\n");
         float fps = 0;
         if (!streamVFps.isEmpty()) { try { fps = Float.parseFloat(streamVFps.replaceAll("[^0-9.]", "")); } catch (Exception ignored) {} }
-        if (fps <= 0 && vf != null) fps = vf.frameRate;
         if (fps > 0) v.append("帧率 ").append(String.format("%.3f fps", fps)).append("\n");
         if (streamBitrate > 0) v.append("码率 ").append(FormatUtils.formatBitrate(streamBitrate)).append("\n");
-        else if (vf != null && vf.bitrate > 0) v.append("码率 ").append(vf.bitrate/1000).append("kbps\n");
         if (streamVBitDepth > 0) v.append("色深 ").append(streamVBitDepth).append("bit\n");
-        if (streamVHdr || (vf != null && vf.colorInfo != null)) v.append("HDR10\n");
+        if (streamVHdr || (!streamVColor.isEmpty() && (streamVColor.contains("bt2020") || streamVColor.contains("2020")))) v.append("HDR10\n");
         v.append("解码 ").append(actualVideoDecoder.isEmpty() ? (isHwDecode ? "硬解" : "软解") : actualVideoDecoder);
         infoText.setText(v.toString());
 
-        // 音频（右列）
+        // 音频（右列）—— 使用 stream API 探测数据
         StringBuilder a = new StringBuilder();
         a.append("── 音频 ──\n");
-        if (af != null) {
-            String ac = FormatUtils.fmtAudioCodec(af.codecs != null ? af.codecs : af.sampleMimeType);
+        if (streamAudioTracks != null && !streamAudioTracks.isEmpty()) {
+            StreamResponse.AudioStreamInfo af = streamAudioTracks.get(0);
+            String ac = FormatUtils.fmtAudioCodec(af.codecName);
             a.append("编码 ").append(ac).append("\n");
-            int ch = af.channelCount;
+            int ch = af.channels;
             a.append("声道 ").append(ch > 0 ? (ch == 8 ? "7.1" : ch == 6 ? "5.1" : ch + "ch") : "?").append("\n");
-            a.append("采样 ").append(af.sampleRate > 0 ? af.sampleRate + "Hz" : "?").append("\n");
-            if (af.bitrate > 0) a.append("码率 ").append(af.bitrate/1000).append("kbps\n");
+            if (af.sampleRate > 0) a.append("采样 ").append(af.sampleRate).append("Hz\n");
+            if (af.bps > 0) a.append("码率 ").append(FormatUtils.formatBitrate(af.bps)).append("\n");
             a.append("解码 ").append(actualAudioDecoder.isEmpty() ? (isHwDecode ? "硬解" : "软解") : actualAudioDecoder);
-            // 显示用户选择的音轨（如有）
-            String selAudio = cloudStreamManager != null ? cloudStreamManager.getLastAudioTrackLabel() : "";
-            if (!selAudio.isEmpty() && !selAudio.equals("默认")) {
-                a.append("\n已选 ").append(selAudio);
-            }
         } else {
             a.append("无音轨\n");
         }
@@ -1112,7 +1028,7 @@ public class PlayerActivity extends AppCompatActivity {
             }
         }
         // 时长
-        long durMs = player.getDuration();
+        long durMs = playerView != null ? playerView.getDuration() : 0;
         if (durMs > 0) {
             if (x.length() > 0) x.append("\n");
             x.append("时长 ").append(FormatUtils.fmtTime((int)(durMs/1000)));
@@ -1131,8 +1047,10 @@ public class PlayerActivity extends AppCompatActivity {
     };
 
     private void saveProgress() {
-        if (player == null || player.getPlaybackState() != Player.STATE_READY) return;
-        long p = player.getCurrentPosition(); if (p <= 0) return;
+        if (playerView == null) return;
+        int state = playerView.getCurrentState();
+        if (state != GSYVideoView.CURRENT_STATE_PLAYING && state != GSYVideoView.CURRENT_STATE_PAUSE) return;
+        long p = playerView.getCurrentPositionWhenPlaying(); if (p <= 0) return;
         long ts = p / 1000;
         Map<String, Object> r = new HashMap<>();
         r.put("item_guid", itemGuid); r.put("media_guid", mediaGuid);
@@ -1140,7 +1058,7 @@ public class PlayerActivity extends AppCompatActivity {
         r.put("audio_guid", audioGuid != null ? audioGuid : "");
         r.put("subtitle_guid", subtitleGuid != null ? subtitleGuid : "_no_display_");
         r.put("resolution", !streamResolution.isEmpty() ? streamResolution : (resolution != null ? resolution : "")); r.put("bitrate", streamBitrate);
-        r.put("ts", ts); r.put("duration", itemDuration > 0 ? itemDuration : player.getDuration()/1000);
+        r.put("ts", ts); r.put("duration", itemDuration > 0 ? itemDuration : playerView.getDuration()/1000);
         apiManager.setReferer(baseUrl + "/v/video/" + itemGuid + "?media_guid=" + mediaGuid);
         Log.d(TAG, "recordPlayStatus 请求: " + (r != null ? new com.google.gson.Gson().toJson(r) : "null"));
         apiManager.getApi().recordPlayStatus(r).enqueue(new retrofit2.Callback<ApiResponse<Object>>() {
@@ -1233,8 +1151,8 @@ public class PlayerActivity extends AppCompatActivity {
                 case KeyEvent.KEYCODE_DPAD_LEFT:
                 case KeyEvent.KEYCODE_DPAD_RIGHT: {
                     long step = k == KeyEvent.KEYCODE_DPAD_LEFT ? -seekStep : seekStep;
-                    long cur = pendingSeekMs >= 0 ? pendingSeekMs : (player != null ? player.getCurrentPosition() : 0);
-                    long dur = player != null ? player.getDuration() : 0;
+                    long cur = pendingSeekMs >= 0 ? pendingSeekMs : (playerView != null ? playerView.getCurrentPositionWhenPlaying() : 0);
+                    long dur = playerView != null ? playerView.getDuration() : 0;
                     long target = Math.max(0, Math.min(dur, cur + step));
                     // 立即更新 UI
                     String timeText = FormatUtils.fmt(target) + " / " + FormatUtils.fmt(dur);
@@ -1247,8 +1165,8 @@ public class PlayerActivity extends AppCompatActivity {
                     pendingSeekMs = target;
                     if (seekCommitR != null) handler.removeCallbacks(seekCommitR);
                     seekCommitR = () -> {
-                        if (player != null) {
-                            player.seekTo(target);
+                        if (playerView != null) {
+                            playerView.seekTo((int) target);
                             if (danmuManager != null) danmuManager.onSeekTo(target);
                         }
                         pendingSeekMs = -1;
@@ -1275,9 +1193,9 @@ public class PlayerActivity extends AppCompatActivity {
 
     /** 控制栏隐藏时显示进度时间浮层 */
     private void showSeekOverlay() {
-        if (player == null) return;
+        if (playerView == null) return;
         updateTime();
-        tvSeekOverlay.setText(FormatUtils.fmt(player.getCurrentPosition()) + " / " + FormatUtils.fmt(player.getDuration()));
+        tvSeekOverlay.setText(FormatUtils.fmt(playerView.getCurrentPositionWhenPlaying()) + " / " + FormatUtils.fmt(playerView.getDuration()));
         tvSeekOverlay.setVisibility(View.VISIBLE);
         handler.removeCallbacks(hideSeekOverlayR);
         handler.postDelayed(hideSeekOverlayR, 2000);
@@ -1312,13 +1230,11 @@ public class PlayerActivity extends AppCompatActivity {
         super.onPause();
         restoreOrientation();
     }
-    @Override protected void onStop() { super.onStop(); saveProgress(); if (player != null) player.setPlayWhenReady(false); }
+    @Override protected void onStop() { super.onStop(); saveProgress(); if (playerView != null) playerView.onVideoPause(); }
     @Override protected void onDestroy() {
         saveProgress();
         super.onDestroy(); handler.removeCallbacksAndMessages(null);
         if (danmuManager != null) { danmuManager.destroy(); }
-        if (player != null) { player.release(); player = null; }
+        if (playerView != null) { playerView.release(); }
     }
 }
-
-

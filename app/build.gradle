@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId "com.fntv.app"
-        minSdkVersion 19
+        minSdkVersion 23
         targetSdkVersion 32
         versionCode 17
         versionName "1.1.7"
@@ -46,8 +46,5 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:3.12.13'
     implementation 'com.google.code.gson:gson:2.8.9'
     implementation 'com.squareup.okhttp3:logging-interceptor:3.12.13'
-    implementation 'com.google.android.exoplayer:exoplayer-core:2.18.7'
-    implementation 'com.google.android.exoplayer:exoplayer-hls:2.18.7'
-    implementation 'com.google.android.exoplayer:exoplayer-ui:2.18.7'
-    implementation 'org.jellyfin.exoplayer:exoplayer-ffmpeg-extension:2.18.7+1'
+    implementation 'io.github.carguo:gsyvideoplayer:13.0.0'
 }

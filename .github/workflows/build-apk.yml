@@ -2,7 +2,7 @@ name: Build Debug APK
 
 on:
   push:
-    branches: [ master, master-* ]
+    branches: [ master, master-*, feature/gsy-player ]
   workflow_dispatch:
 
 jobs:

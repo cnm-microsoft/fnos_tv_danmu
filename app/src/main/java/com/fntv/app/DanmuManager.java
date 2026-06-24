@@ -15,7 +15,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.android.exoplayer2.Player;
+
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
 public class DanmuManager {
 
     public interface DataProvider {
-        Player getPlayer();
+        long getPlayerDurationMs();
         long getItemDuration();
         String getItemTV();
         String getItemTitle();
@@ -773,9 +773,9 @@ public class DanmuManager {
                     danmuItems = list;
                     // 弹幕时间戳压缩匹配视频时长
                     long videoDur = 0;
-                    Player p = data.getPlayer();
-                    if (p != null && p.getDuration() > 0)
-                        videoDur = p.getDuration() / 1000;
+                    long playerDur = data.getPlayerDurationMs();
+                    if (playerDur > 0)
+                        videoDur = playerDur / 1000;
                     else if (data.getItemDuration() > 0)
                         videoDur = data.getItemDuration();
                     if (videoDur > 0 && !list.isEmpty()) {
