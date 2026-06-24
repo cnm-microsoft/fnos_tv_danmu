@@ -27,9 +27,11 @@ public class StreamResponse {
     @SerializedName("cloud_storage_info")
     public CloudStorageInfo cloudStorageInfo;
 
-    /** 响应头（含 Cookie） */
+    /** 响应头（含网盘专用 UA 和 Cookie） */
     public static class ResponseHeader {
         public List<String> Cookie;
+        @SerializedName("User-Agent")
+        public List<String> UserAgent;
     }
 
     /** 云存储信息 */

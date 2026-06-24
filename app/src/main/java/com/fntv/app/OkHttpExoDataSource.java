@@ -17,11 +17,14 @@ public class OkHttpExoDataSource extends BaseDataSource {
     private static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
     private static int chunkSize = 0; // 0 = 不分块
     private static String cloudCookie = "";
+    private static String cloudUserAgent = ""; // 网盘直链专用 UA（如 pan.baidu.com）
     public static int lastResponseCode = 0;
     public static String lastContentType = "";
     private final OkHttpClient client;
 
     public static void setCloudCookie(String cookie) { cloudCookie = cookie; }
+    /** 设置网盘直链专用 UA（直连网盘时用，避免 403） */
+    public static void setCloudUserAgent(String ua) { cloudUserAgent = ua != null ? ua : ""; }
     /** [诊断] 当前是否已注入网盘鉴权 Cookie（仅供日志判断用） */
     public static boolean hasCloudCookie() { return cloudCookie != null && !cloudCookie.isEmpty(); }
     private Response response;
@@ -51,7 +54,9 @@ public class OkHttpExoDataSource extends BaseDataSource {
                 ? "bytes=" + dataSpec.position + "-" + rangeEnd
                 : "bytes=" + dataSpec.position + "-";
         builder.header("Range", range);
-        builder.header("User-Agent", UA);
+        // 网盘直链用服务端下发的专用 UA（如 pan.baidu.com），NAS 请求用默认浏览器 UA
+        String effectiveUa = !cloudUserAgent.isEmpty() ? cloudUserAgent : UA;
+        builder.header("User-Agent", effectiveUa);
 
         // 云盘直链 Cookie
         if (!cloudCookie.isEmpty()) {
@@ -73,7 +78,8 @@ public class OkHttpExoDataSource extends BaseDataSource {
         Log.w(TAG, "[诊断] 请求 " + dataSpec.uri.toString()
                 + " | Range=" + range
                 + " | 带Cookie=" + hasCloudCookie()
-                + " | UA=" + UA);
+                + " | cloudUA=" + cloudUserAgent
+                + " | 实际UA=" + effectiveUa);
         Log.w(TAG, "[诊断] 响应 code=" + response.code() + " " + response.message()
                 + " | Location=" + response.header("Location")
                 + " | Content-Type=" + response.header("Content-Type")

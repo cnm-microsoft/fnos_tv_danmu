@@ -194,6 +194,12 @@ public class CloudStreamManager {
                                 StreamResponse sd = r.body().data;
                                 StreamInfo info = new StreamInfo();
 
+                                // [诊断] 打印 header 原始内容，确认服务端是否下发网盘 Cookie 及字段名
+                                try {
+                                    String headerJson = new Gson().toJson(sd.header);
+                                    Log.w(TAG, "[诊断] sd.header 原始=" + headerJson);
+                                } catch (Exception ignored) {}
+
                                 // 视频流
                                 if (sd.videoStream != null) {
                                     info.bitrate = sd.videoStream.bps;
@@ -255,7 +261,7 @@ public class CloudStreamManager {
                                 info.audioTracks = sd.audioStreams;
                                 info.subtitleTracks = sd.subtitleStreams;
 
-                                // 非 STRM 的画质信息
+                                // 非 STRM 的画质信息（直连网盘）
                                 qualityCount = sd.directLinkQualities != null ? sd.directLinkQualities.size() : 0;
                                 if (qualityCount > 0) {
                                     // [诊断] 网盘鉴权 Cookie：确认 sd.header.Cookie 是否下发、是否被消费
@@ -272,13 +278,29 @@ public class CloudStreamManager {
                                                 + " isM3u8=" + q.isM3u8);
                                     }
 
+                                    // 读取服务端下发的网盘专用 UA（如 pan.baidu.com，百度大文件必须此 UA 才能直连）
+                                    String serverUA = "";
+                                    if (sd.header != null && sd.header.UserAgent != null && !sd.header.UserAgent.isEmpty()) {
+                                        serverUA = sd.header.UserAgent.get(0);
+                                        Log.d(TAG, "网盘直链专用 UA: " + serverUA);
+                                    }
+
                                     qualityLabels = new String[qualityCount];
+                                    qualityUrls = new String[qualityCount];
                                     for (int qi = 0; qi < qualityCount; qi++) {
                                         StreamResponse.DirectLinkQuality q = sd.directLinkQualities.get(qi);
                                         qualityLabels[qi] = q.resolution != null && !q.resolution.isEmpty()
                                                 ? q.resolution : ("画质" + qi);
+                                        qualityUrls[qi] = q.url != null ? q.url.replace("\\u0026", "&") : "";
                                     }
                                     if (qualityIndex >= qualityCount) qualityIndex = 0;
+                                    cloudDirectUrl = qualityUrls[qualityIndex];
+                                    cloudDirectMode = true;
+
+                                    // 注入网盘专用 UA，让直链请求使用正确的 User-Agent
+                                    OkHttpExoDataSource.setCloudUserAgent(serverUA);
+                                    Log.d(TAG, "非 STRM 直链模式: " + cloudDirectUrl.substring(0, Math.min(80, cloudDirectUrl.length())) + "... UA=" + serverUA);
+
                                     cb.runOnUiThread(() -> {
                                         setCloudBtnVisible(true);
                                         updateCloudBtnText();
@@ -323,6 +345,7 @@ public class CloudStreamManager {
         qualityCount = 0;
         qualityLabels = null;
         qualityUrls = null;
+        OkHttpExoDataSource.setCloudUserAgent("");
     }
 
     // ========== 画质菜单 ==========
