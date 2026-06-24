@@ -14,6 +14,7 @@ import okhttp3.Response;
 public class OkHttpExoDataSource extends BaseDataSource {
 
     private static final String TAG = "OkHttpDS";
+    private static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
     private static int chunkSize = 0; // 0 = 不分块
     private static String cloudCookie = "";
     public static int lastResponseCode = 0;
@@ -21,6 +22,8 @@ public class OkHttpExoDataSource extends BaseDataSource {
     private final OkHttpClient client;
 
     public static void setCloudCookie(String cookie) { cloudCookie = cookie; }
+    /** [诊断] 当前是否已注入网盘鉴权 Cookie（仅供日志判断用） */
+    public static boolean hasCloudCookie() { return cloudCookie != null && !cloudCookie.isEmpty(); }
     private Response response;
     private BufferedInputStream bufferedInput;
     private long bytesRead;
@@ -48,7 +51,7 @@ public class OkHttpExoDataSource extends BaseDataSource {
                 ? "bytes=" + dataSpec.position + "-" + rangeEnd
                 : "bytes=" + dataSpec.position + "-";
         builder.header("Range", range);
-        builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        builder.header("User-Agent", UA);
 
         // 云盘直链 Cookie
         if (!cloudCookie.isEmpty()) {
@@ -65,6 +68,18 @@ public class OkHttpExoDataSource extends BaseDataSource {
 
         lastResponseCode = response.code();
         lastContentType = response.header("Content-Type", "");
+
+        // [诊断] 打印实际请求与响应，用于定位网盘直链失败（403/重定向/类型不符等）
+        Log.w(TAG, "[诊断] 请求 " + dataSpec.uri.toString()
+                + " | Range=" + range
+                + " | 带Cookie=" + hasCloudCookie()
+                + " | UA=" + UA);
+        Log.w(TAG, "[诊断] 响应 code=" + response.code() + " " + response.message()
+                + " | Location=" + response.header("Location")
+                + " | Content-Type=" + response.header("Content-Type")
+                + " | Content-Range=" + response.header("Content-Range")
+                + " | Content-Length=" + (response.body() != null ? response.body().contentLength() : -1)
+                + " | Set-Cookie=" + response.headers("Set-Cookie"));
 
         if (response.code() != 200 && response.code() != 206) {
             response.close();

@@ -1,0 +1,9 @@
+# 强制换行符：脚本/workflow 在 Linux CI 上运行必须用 LF，避免 CRLF 破坏 shell 执行
+*.sh        text eol=lf
+gradlew     text eol=lf
+*.bat       text eol=crlf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# 二进制文件，不做换行转换
+*.jar       binary

@@ -258,6 +258,20 @@ public class CloudStreamManager {
                                 // 非 STRM 的画质信息
                                 qualityCount = sd.directLinkQualities != null ? sd.directLinkQualities.size() : 0;
                                 if (qualityCount > 0) {
+                                    // [诊断] 网盘鉴权 Cookie：确认 sd.header.Cookie 是否下发、是否被消费
+                                    int cookieCount = (sd.header != null && sd.header.Cookie != null)
+                                            ? sd.header.Cookie.size() : 0;
+                                    Log.w(TAG, "[诊断] 非 STRM 直链: qualityCount=" + qualityCount
+                                            + " header.Cookie 条数=" + cookieCount
+                                            + " DataSource 当前 cloudCookie 非空=" + OkHttpExoDataSource.hasCloudCookie());
+                                    for (int qi = 0; qi < qualityCount; qi++) {
+                                        StreamResponse.DirectLinkQuality q = sd.directLinkQualities.get(qi);
+                                        Log.w(TAG, "[诊断]   q[" + qi + "] res=" + q.resolution
+                                                + " url=" + (q.url != null ? q.url : "null")
+                                                + " expiredAt=" + q.expiredAt
+                                                + " isM3u8=" + q.isM3u8);
+                                    }
+
                                     qualityLabels = new String[qualityCount];
                                     for (int qi = 0; qi < qualityCount; qi++) {
                                         StreamResponse.DirectLinkQuality q = sd.directLinkQualities.get(qi);
