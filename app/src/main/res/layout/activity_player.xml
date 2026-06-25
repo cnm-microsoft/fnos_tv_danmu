@@ -5,7 +5,7 @@
     android:background="@android:color/black">
 
     <!-- 视频 -->
-    <com.shuyu.gsyvideoplayer.video.EmptyGSYVideoPlayer
+    <com.fntv.app.CustomGSYVideoPlayer
         android:id="@+id/playerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

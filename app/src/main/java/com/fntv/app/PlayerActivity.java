@@ -20,7 +20,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import android.content.pm.ActivityInfo;
 import com.fntv.app.api.FnApiManager;
 import com.fntv.app.api.model.*;
-import com.shuyu.gsyvideoplayer.video.EmptyGSYVideoPlayer;
 import com.shuyu.gsyvideoplayer.video.base.GSYVideoView;
 import com.shuyu.gsyvideoplayer.listener.VideoAllCallBack;
 import com.shuyu.gsyvideoplayer.utils.GSYVideoType;
@@ -30,7 +29,7 @@ import java.util.Map;
 
 public class PlayerActivity extends AppCompatActivity {
 
-    private EmptyGSYVideoPlayer playerView;
+    private CustomGSYVideoPlayer playerView;
     private TextView tvBuffering, tvTime, infoText;
     private SeekBar seekBar;
     private Button btnPlayPause, btnRewind, btnForward, btnSpeed, btnRatio, btnInfo, btnCloseInfo, btnEpisodeList, btnNextEp, btnBack, btnDanmu;
@@ -449,22 +448,20 @@ public class PlayerActivity extends AppCompatActivity {
             @Override public void onClickResumeFullscreen(String url, Object... objects) {}
             @Override public void onClickSeekbar(String url, Object... objects) {}
             @Override public void onClickSeekbarFullscreen(String url, Object... objects) {}
-            @Override public void onNoteClick(String url, Object... objects) {}
-            @Override public void onNoteClickFullscreen(String url, Object... objects) {}
             @Override public void onAutoComplete(String url, Object... objects) {
                 Log.d(TAG, "GSY onAutoComplete hasNext=" + (episodeManager != null && episodeManager.hasNext()));
                 if (episodeManager != null && episodeManager.hasNext()) {
                     episodeManager.playNext();
                 }
             }
-            @Override public void onAutoCompletion(String url, Object... objects) {}
             @Override public void onComplete(String url, Object... objects) {}
             @Override public void onEnterFullscreen(String url, Object... objects) {}
             @Override public void onQuitFullscreen(String url, Object... objects) {}
-            @Override public void onQuitPlaying(String url, Object... objects) {
-                stopSave();
-                if (danmuManager != null) danmuManager.onPlayerPause();
-            }
+            @Override public void onQuitSmallWidget(String url, Object... objects) {}
+            @Override public void onEnterSmallWidget(String url, Object... objects) {}
+            @Override public void onTouchScreenSeekVolume(String url, Object... objects) {}
+            @Override public void onTouchScreenSeekPosition(String url, Object... objects) {}
+            @Override public void onTouchScreenSeekLight(String url, Object... objects) {}
             @Override public void onPlayError(String url, Object... objects) {
                 Log.e(TAG, "GSY 播放错误: url=" + url);
                 if (retryCount < 5) {
@@ -476,7 +473,9 @@ public class PlayerActivity extends AppCompatActivity {
                     }, 2000 * retryCount);
                 }
             }
-            @Override public void onPlayBlank(String url, Object... objects) {}
+            @Override public void onClickStartThumb(String url, Object... objects) {}
+            @Override public void onClickBlank(String url, Object... objects) {}
+            @Override public void onClickBlankFullscreen(String url, Object... objects) {}
         });
     }
 
@@ -556,7 +555,7 @@ public class PlayerActivity extends AppCompatActivity {
         }
 
         retryCount = 0;
-        playerView.setUp(cfg.url, false, headers, null);
+        playerView.setUp(cfg.url, false, null, headers, null);
         playerView.startPlayLogic();
         Log.d(TAG, "startPlayback: parentGuid=" + parentGuid + " episodeLoaded=" + (episodeManager != null && episodeManager.isLoaded()) + " loadingEp=" + (episodeManager != null && episodeManager.isLoading()));
         if (parentGuid != null && !parentGuid.isEmpty() && episodeManager != null && !episodeManager.isLoaded() && !episodeManager.isLoading())
@@ -610,7 +609,7 @@ public class PlayerActivity extends AppCompatActivity {
                 default: showType = GSYVideoType.SCREEN_TYPE_DEFAULT; break; // 适应
             }
             GSYVideoType.setShowType(showType);
-            playerView.changeTextureViewShowType();
+            playerView.applyTextureViewShowType();
         }
     }
 
