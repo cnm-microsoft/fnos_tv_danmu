@@ -4,6 +4,7 @@ plugins {
 }
 
 android {
+    namespace 'com.fntv.app'
     compileSdkVersion 33
 
     defaultConfig {
@@ -28,13 +29,9 @@ android {
 
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "FNTV_${variant.buildType.name}_v${variant.versionName}_${generateTime()}.apk"
+            outputFileName = "FNTV_${variant.buildType.name}_v${variant.versionName}.apk"
         }
     }
-}
-
-static def generateTime() {
-    return new java.text.SimpleDateFormat("yyyyMMdd_HHmm", Locale.CHINA).format(new Date())
 }
 
 dependencies {
