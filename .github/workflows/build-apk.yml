@@ -12,7 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -Dkotlin.incremental=false"
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.daemon=false -Dkotlin.incremental=false -Dorg.gradle.caching=false"
+      GRADLE_USER_HOME: /tmp/gradle-home
 
     steps:
       - name: Checkout
@@ -23,22 +24,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.2
-          cache-read-only: false
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Clean project
-        run: ./gradlew clean --no-daemon
+      - name: Clean project and workspace
+        run: |
+          rm -rf ~/.gradle/caches ~/.gradle/wrapper .gradle
+          ./gradlew clean --no-daemon || true
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace --info --warning-mode all 2>&1 | tee build.log
+        run: ./gradlew assembleDebug --no-daemon --stacktrace --warning-mode all 2>&1 | tee build.log
 
       - name: Show build log on failure
         if: failure()
