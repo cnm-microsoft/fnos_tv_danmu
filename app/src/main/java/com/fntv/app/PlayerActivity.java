@@ -63,8 +63,8 @@ public class PlayerActivity extends AppCompatActivity {
     private long pendingSeekMs = -1;
     private static final String TAG = "Player";
 
-    private static final int[] RATIO_MODES = {0, 1, 2};
-    private static final String[] RATIO_LABELS = {"适应", "拉伸", "缩放"};
+    private static final int[] RATIO_MODES = {0, 1};
+    private static final String[] RATIO_LABELS = {"适应", "缩放"};
     private String actualVideoDecoder = "";
     private String actualAudioDecoder = "";
     // 流 API 探测数据
@@ -604,9 +604,9 @@ public class PlayerActivity extends AppCompatActivity {
         if (playerView != null) {
             int showType;
             switch (RATIO_MODES[ratioIdx]) {
-                case 1: showType = GSYVideoType.SCREEN_MATCH_FULL; break;  // 拉伸
-                case 2: showType = GSYVideoType.SCREEN_TYPE_FULL; break;   // 缩放（裁剪）
-                default: showType = GSYVideoType.SCREEN_TYPE_DEFAULT; break; // 适应
+                case 0: showType = GSYVideoType.SCREEN_TYPE_DEFAULT; break; // 适应
+                case 1: showType = GSYVideoType.SCREEN_TYPE_FULL; break;   // 缩放（裁剪）
+                default: showType = GSYVideoType.SCREEN_TYPE_DEFAULT; break;
             }
             GSYVideoType.setShowType(showType);
             playerView.applyTextureViewShowType();
