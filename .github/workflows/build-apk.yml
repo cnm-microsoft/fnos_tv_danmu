@@ -3,30 +3,51 @@ name: Build Debug APK
 on:
   push:
     branches: [ master, master-*, feature/gsy-player ]
+  pull_request:
+    branches: [ master ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.daemon=false -Dkotlin.incremental=false -Dorg.gradle.caching=false"
+      GRADLE_USER_HOME: /tmp/gradle-home
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 11
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '11'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+          java-version: '17'
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Clean project and workspace
+        run: |
+          rm -rf ~/.gradle/caches ~/.gradle/wrapper .gradle
+          ./gradlew clean --no-daemon || true
+
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace --warning-mode all 2>&1 | tee build.log
+
+      - name: Show build log on failure
+        if: failure()
+        run: |
+          echo "=== BUILD LOG ==="
+          cat build.log
+          echo "=== LAST 500 LINES ==="
+          tail -n 500 build.log
+
+      - name: Verify APK exists
+        run: |
+          ls -la app/build/outputs/apk/debug/
+          find app/build/outputs/apk/debug/ -name "*.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -34,6 +55,7 @@ jobs:
           name: fnos-tv-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 30
 
       - name: Upload build reports on failure
         if: failure()
@@ -43,4 +65,6 @@ jobs:
           path: |
             app/build/reports/
             build/reports/
+            app/build/outputs/logs/
           if-no-files-found: ignore
+          retention-days: 7

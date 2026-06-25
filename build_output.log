@@ -1,0 +1,72 @@
+Downloading https://services.gradle.org/distributions/gradle-8.2-bin.zip
+............10%............20%............30%.............40%............50%............60%............70%.............80%............90%............100%
+
+Welcome to Gradle 8.2!
+
+Here are the highlights of this release:
+ - Kotlin DSL: new reference documentation, assignment syntax by default
+ - Kotlin DSL is now the default with Gradle init
+ - Improved suggestions to resolve errors in console output
+
+For more details see https://docs.gradle.org/8.2/release-notes.html
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+A problem occurred configuring root project 'workspace'.
+> Could not resolve all files for configuration ':classpath'.
+   > Could not download netty-codec-4.1.72.Final.jar (io.netty:netty-codec:4.1.72.Final)
+      > Could not get resource 'https://repo.maven.apache.org/maven2/io/netty/netty-codec/4.1.72.Final/netty-codec-4.1.72.Final.jar'.
+         > No space left on device
+   > Could not download netty-transport-4.1.72.Final.jar (io.netty:netty-transport:4.1.72.Final)
+      > Could not get resource 'https://repo.maven.apache.org/maven2/io/netty/netty-transport/4.1.72.Final/netty-transport-4.1.72.Final.jar'.
+         > No space left on device
+   > Could not download netty-buffer-4.1.72.Final.jar (io.netty:netty-buffer:4.1.72.Final)
+      > Could not get resource 'https://repo.maven.apache.org/maven2/io/netty/netty-buffer/4.1.72.Final/netty-buffer-4.1.72.Final.jar'.
+         > No space left on device
+   > Could not download netty-resolver-4.1.72.Final.jar (io.netty:netty-resolver:4.1.72.Final)
+      > Could not get resource 'https://repo.maven.apache.org/maven2/io/netty/netty-resolver/4.1.72.Final/netty-resolver-4.1.72.Final.jar'.
+         > No space left on device
+   > Could not download netty-common-4.1.72.Final.jar (io.netty:netty-common:4.1.72.Final)
+      > Could not get resource 'https://repo.maven.apache.org/maven2/io/netty/netty-common/4.1.72.Final/netty-common-4.1.72.Final.jar'.
+         > No space left on device
+   > Could not download netty-tcnative-classes-2.0.46.Final.jar (io.netty:netty-tcnative-classes:2.0.46.Final)
+      > Could not get resource 'https://repo.maven.apache.org/maven2/io/netty/netty-tcnative-classes/2.0.46.Final/netty-tcnative-classes-2.0.46.Final.jar'.
+         > No space left on device
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 16s
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Failed to notify root build lifecycle listener.
+> Could not update /root/.gradle/caches/8.2/file-changes/last-build.bin
+> Could not update /workspace/.gradle/8.2/fileChanges/last-build.bin
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1m 16s
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Could not receive a message from the daemon.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.

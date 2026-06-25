@@ -4,12 +4,13 @@ plugins {
 }
 
 android {
-    compileSdkVersion 33
+    namespace 'com.fntv.app'
+    compileSdkVersion 34
 
     defaultConfig {
         applicationId "com.fntv.app"
         minSdkVersion 23
-        targetSdkVersion 32
+        targetSdkVersion 34
         versionCode 17
         versionName "1.1.7"
         vectorDrawables.useSupportLibrary = true
@@ -28,13 +29,9 @@ android {
 
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "FNTV_${variant.buildType.name}_v${variant.versionName}_${generateTime()}.apk"
+            outputFileName = "FNTV_${variant.buildType.name}_v${variant.versionName}.apk"
         }
     }
-}
-
-static def generateTime() {
-    return new java.text.SimpleDateFormat("yyyyMMdd_HHmm", Locale.CHINA).format(new Date())
 }
 
 dependencies {
